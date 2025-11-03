@@ -1,0 +1,2884 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel Fulfillment v4.9 MEJORADO</title>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  
+  <style>
+    :root {
+      --win-blue: #0078D4;
+      --win-blue-hover: #005A9E;
+      --bg-primary: #F3F3F3;
+      --bg-secondary: #FFFFFF;
+      --bg-tertiary: #FAFAFA;
+      --text-primary: #000000;
+      --text-secondary: #605E5C;
+      --text-tertiary: #8A8886;
+      --status-success: #107C10;
+      --status-warning: #F7630C;
+      --status-error: #D13438;
+      --border-color: #E1DFDD;
+      --border-subtle: #EDEBE9;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-md: 0 3px 6px rgba(0,0,0,0.08);
+      --shadow-lg: 0 8px 16px rgba(0,0,0,0.12);
+      --shadow-xl: 0 16px 32px rgba(0,0,0,0.15);
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 16px;
+      --spacing-xs: 4px;
+      --spacing-sm: 8px;
+      --spacing-md: 16px;
+      --spacing-lg: 24px;
+      --spacing-xl: 32px;
+      --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: 'Segoe UI Variable', 'Segoe UI', -apple-system, system-ui, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .app-container {
+      max-width: 1800px;
+      margin: 0 auto;
+      background: var(--bg-secondary);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .app-header {
+      background: linear-gradient(135deg, #0078D4 0%, #005A9E 100%);
+      color: white;
+      padding: var(--spacing-lg) var(--spacing-xl);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow-md);
+    }
+
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--spacing-lg);
+      flex-wrap: wrap;
+    }
+
+    .header-title {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-md);
+      flex: 1;
+    }
+
+    .header-title h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+
+    .header-title p {
+      font-size: 0.875rem;
+      opacity: 0.9;
+      margin-top: 2px;
+    }
+
+    .version-badge {
+      background: rgba(255,255,255,0.2);
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      margin-left: 10px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: var(--spacing-sm);
+      align-items: center;
+    }
+
+    .btn-help, .btn-utilities {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: all var(--transition);
+      backdrop-filter: blur(10px);
+    }
+
+    .btn-help:hover, .btn-utilities:hover {
+      background: rgba(255,255,255,0.25);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    .utilities-dropdown { position: relative; }
+    .utilities-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 8px;
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      min-width: 200px;
+      z-index: 1000;
+    }
+    .utilities-menu.show { display: block; animation: slideDown 0.2s ease-out; }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .utilities-menu-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border-subtle);
+      transition: all var(--transition);
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      color: var(--text-primary);
+    }
+    .utilities-menu-item:last-child { border-bottom: none; }
+    .utilities-menu-item:hover {
+      background: var(--bg-tertiary);
+      color: var(--win-blue);
+    }
+
+    .load-panel {
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-color);
+      padding: var(--spacing-lg) var(--spacing-xl);
+    }
+    .load-section { max-width: 1400px; margin: 0 auto; }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: var(--spacing-md);
+    }
+    .load-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-lg);
+    }
+    .load-item {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-sm);
+    }
+    .file-status {
+      font-size: 0.8125rem;
+      color: var(--text-tertiary);
+      padding-left: var(--spacing-sm);
+    }
+    .file-status.loaded {
+      color: var(--status-success);
+      font-weight: 600;
+    }
+    .merge-status {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      padding: var(--spacing-sm) var(--spacing-md);
+      background: #D1FAE5;
+      color: #065F46;
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+
+    .filters-panel {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: var(--spacing-md) var(--spacing-xl);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: var(--spacing-md);
+    }
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-xs);
+    }
+    .filter-label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .filter-search { grid-column: 1 / -1; }
+    .filter-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: var(--spacing-sm);
+      justify-content: flex-end;
+    }
+    .search-help {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-style: italic;
+      margin-top: 2px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      padding: 10px 16px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-md);
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+      text-decoration: none;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--win-blue);
+      color: white;
+      border-color: var(--win-blue);
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: var(--win-blue-hover);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-secondary {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border-color: var(--border-color);
+    }
+    .btn-secondary:hover {
+      background: var(--bg-tertiary);
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-success {
+      background: var(--status-success);
+      color: white;
+      border-color: var(--status-success);
+    }
+    .btn-success:hover:not(:disabled) {
+      background: #0E5F0E;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+    .btn-warning {
+      background: var(--status-warning);
+      color: white;
+      border-color: var(--status-warning);
+    }
+    .btn-warning:hover:not(:disabled) {
+      background: #D85509;
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .input-field, .input-select {
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      font-family: inherit;
+      font-size: 0.875rem;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      transition: all var(--transition);
+      width: 100%;
+    }
+    .input-field:focus, .input-select:focus {
+      outline: none;
+      border-color: var(--win-blue);
+      box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.1);
+    }
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      font-size: 0.875rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .checkbox-label input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      accent-color: var(--win-blue);
+    }
+
+    .main-content {
+      flex: 1;
+      padding: var(--spacing-lg) var(--spacing-xl);
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-lg);
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-md);
+    }
+    .stat-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: var(--spacing-md);
+      border-left: 4px solid var(--win-blue);
+      transition: all var(--transition);
+    }
+    .stat-card:hover {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      margin-bottom: var(--spacing-xs);
+    }
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .content-tabs {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .tabs-nav {
+      display: flex;
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: var(--spacing-xs);
+      gap: var(--spacing-xs);
+    }
+    .tab-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--spacing-sm);
+      padding: 12px 20px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: var(--radius-md);
+      transition: all var(--transition);
+      position: relative;
+    }
+    .tab-btn:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+    .tab-btn.active {
+      background: var(--bg-secondary);
+      color: var(--win-blue);
+      box-shadow: var(--shadow-sm);
+    }
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--win-blue);
+      border-radius: 3px 3px 0 0;
+    }
+    .tabs-content { min-height: 400px; }
+    .tab-panel {
+      display: none;
+      padding: var(--spacing-lg);
+      animation: fadeIn 0.3s;
+    }
+    .tab-panel.active { display: block; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .table-container {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+      max-height: 600px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    th {
+      background: linear-gradient(135deg, #0078D4 0%, #005A9E 100%);
+      color: white;
+      padding: 12px 16px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.8125rem;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    tr:hover { background: var(--bg-tertiary); }
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: #E3F2FD; }
+    td.number {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
+    td.center { text-align: center; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.6875rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+      gap: 4px;
+    }
+    .badge-critico { background: #FEE2E2; color: #991B1B; }
+    .badge-alto { background: #FED7AA; color: #9A3412; }
+    .badge-medio { background: #FEF3C7; color: #92400E; }
+    .badge-ftth {
+      background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%);
+      color: white;
+    }
+    .badge-hfc {
+      background: linear-gradient(135deg, #0EA5E9 0%, #0078D4 100%);
+      color: white;
+    }
+    .badge-up { background: #D1FAE5; color: #065F46; }
+    .badge-down { background: #FEE2E2; color: #991B1B; }
+    .badge-critical { background: #7F1D1D; color: white; }
+    .badge-open { background: #DBEAFE; color: #1E40AF; }
+    .badge-fan { background: #FCE7F3; color: #9F1239; }
+    .badge-alarma {
+      background: #FEF3C7;
+      color: #92400E;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .badge-alarma:hover {
+      background: #FDE047;
+      transform: scale(1.05);
+    }
+    .badge-alarma-activa {
+      background: #FEE2E2;
+      color: #991B1B;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    .sparkline { display: inline-block; vertical-align: middle; }
+
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(4px);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.2s;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      position: relative;
+      width: 95%;
+      max-width: 1400px;
+      max-height: 90vh;
+      background: var(--bg-secondary);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-xl);
+      display: flex;
+      flex-direction: column;
+      animation: slideUp 0.3s;
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(40px) scale(0.95); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--spacing-lg) var(--spacing-xl);
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-tertiary);
+    }
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 0;
+    }
+    .modal-close {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all var(--transition);
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+    .modal-filters {
+      padding: var(--spacing-md) var(--spacing-xl);
+      background: var(--bg-tertiary);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      gap: var(--spacing-md);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .modal-body {
+      padding: var(--spacing-lg) var(--spacing-xl);
+      overflow-y: auto;
+      flex: 1;
+    }
+    .modal-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--spacing-md);
+      padding: var(--spacing-lg) var(--spacing-xl);
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-tertiary);
+    }
+    .selection-info {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+    body.modal-open { overflow: hidden; }
+
+    .loading-message {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: var(--spacing-xl);
+      color: var(--text-secondary);
+      text-align: center;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid var(--border-subtle);
+      border-top-color: var(--win-blue);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: var(--spacing-md);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .export-section {
+      display: flex;
+      justify-content: center;
+      gap: var(--spacing-md);
+      padding-top: var(--spacing-md);
+    }
+    .app-footer {
+      background: var(--bg-tertiary);
+      border-top: 1px solid var(--border-subtle);
+      padding: var(--spacing-md) var(--spacing-xl);
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 0.8125rem;
+    }
+    .credits {
+      margin-top: var(--spacing-sm);
+      font-weight: 600;
+      color: var(--win-blue);
+    }
+    .toast {
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      padding: 12px 20px;
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      z-index: 10001;
+      animation: slideInRight 0.3s;
+      max-width: 400px;
+    }
+    @keyframes slideInRight {
+      from { transform: translateX(400px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    .detail-table {
+      width: 100%;
+      font-size: 0.8125rem;
+    }
+    .detail-table th {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      padding: 8px 12px;
+      text-align: left;
+      font-weight: 600;
+      border-bottom: 2px solid var(--border-color);
+    }
+    .detail-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .detail-table tr:hover { background: var(--bg-tertiary); }
+
+    .chart-container {
+      background: var(--bg-tertiary);
+      padding: var(--spacing-md);
+      border-radius: var(--radius-md);
+      margin-bottom: var(--spacing-md);
+    }
+    .chart-title {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-bottom: var(--spacing-sm);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .alarma-info-box {
+      background: #FEF3C7;
+      border: 2px solid #F59E0B;
+      border-radius: var(--radius-md);
+      padding: var(--spacing-md);
+      margin-top: var(--spacing-sm);
+    }
+    .alarma-info-box h4 {
+      color: #92400E;
+      margin-bottom: var(--spacing-sm);
+      font-size: 1rem;
+    }
+    .alarma-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-sm);
+      font-size: 0.875rem;
+    }
+    .alarma-info-item { display: flex; flex-direction: column; }
+    .alarma-info-label {
+      font-weight: 700;
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+    .alarma-info-value {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    /* Nuevos estilos para filtros de equipos */
+    .equipos-filters {
+      background: var(--bg-tertiary);
+      padding: var(--spacing-md);
+      border-radius: var(--radius-md);
+      margin-bottom: var(--spacing-md);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: var(--spacing-md);
+    }
+
+    @media (max-width: 768px) {
+      .header-title h1 { font-size: 1.25rem; }
+      .filters-panel { grid-template-columns: 1fr; }
+      .modal {
+        width: 100%;
+        max-height: 100vh;
+        border-radius: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    
+    <header class="app-header">
+      <div class="header-content">
+        <div class="header-title">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+          </svg>
+          <div>
+            <h1>📊 Panel Fulfillment <span class="version-badge">v4.9 MEJORADO</span></h1>
+            <p>✨ Equipos • Alarmas FMS • Edificios • CMTS • Filtros Avanzados • Ordenamiento</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <div class="utilities-dropdown">
+            <button class="btn-utilities" onclick="toggleUtilities()">
+              🔧 Utilidades
+            </button>
+            <div class="utilities-menu" id="utilitiesMenu">
+              <div class="utilities-menu-item" onclick="openPlanillasNewTab()">
+                📋 Planillas
+              </div>
+            </div>
+          </div>
+          <button class="btn-help" onclick="toast('💡 v4.9 Mejorado: Filtros de equipos + Ordenamiento por ingresos')">
+            💡 Info
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <section class="load-panel">
+      <div class="load-section">
+        <div class="section-header">📁 CARGAR REPORTES</div>
+        
+        <div class="load-buttons">
+          <div class="load-item">
+            <label for="fileConsolidado1" class="btn btn-primary">📄 Consolidado 1</label>
+            <input type="file" id="fileConsolidado1" accept=".xlsx,.xls,.csv" hidden>
+            <span class="file-status" id="status1">Sin cargar</span>
+          </div>
+          
+          <div class="load-item">
+            <label for="fileConsolidado2" class="btn btn-primary">📄 Consolidado 2</label>
+            <input type="file" id="fileConsolidado2" accept=".xlsx,.xls,.csv" hidden>
+            <span class="file-status" id="status2">Sin cargar</span>
+          </div>
+          
+          <div class="load-item">
+            <label for="fileNodos" class="btn btn-primary">🌐 Nodos UP/DOWN</label>
+            <input type="file" id="fileNodos" accept=".xlsx,.xls,.csv" hidden>
+            <span class="file-status" id="status3">Sin cargar</span>
+          </div>
+          
+          <div class="load-item">
+            <label for="fileFMS" class="btn btn-primary">🚨 Alarmas FMS</label>
+            <input type="file" id="fileFMS" accept=".xlsx,.xls,.csv" hidden>
+            <span class="file-status" id="status4">Sin cargar</span>
+          </div>
+          
+          <div class="merge-status" id="mergeStatus" style="display: none;">
+            ✓ <span id="mergeStatusText">Procesando...</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <nav class="filters-panel">
+      <div class="filter-group">
+        <div class="filter-label">🔥 Ordenar Zonas</div>
+        <select id="ordenarPorIngreso" class="input-select">
+          <option value="desc">Mayor a Menor Ingreso</option>
+          <option value="asc">Menor a Mayor Ingreso</option>
+          <option value="">Sin ordenar (Score)</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-label">Filtros Base</div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="filterCATEC">
+          <span>Solo CATEC</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="showAllStates">
+          <span>Ver todos los estados</span>
+        </label>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-label">Tecnología</div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="filterFTTH">
+          <span>Solo FTTH (9xx)</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="filterExcludeFTTH">
+          <span>Excluir FTTH</span>
+        </label>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">Estado Nodo</div>
+        <select id="filterNodoEstado" class="input-select">
+          <option value="">Todos</option>
+          <option value="up">Solo UP</option>
+          <option value="down">Solo DOWN</option>
+          <option value="critical">Críticos (>50 DOWN)</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">CMTS</div>
+        <select id="filterCMTS" class="input-select">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">⭐ Ventana Temporal</div>
+        <select id="daysWindow" class="input-select">
+          <option value="3" selected>3 días</option>
+          <option value="7">7 días</option>
+          <option value="14">14 días</option>
+          <option value="30">30 días</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">Territorio</div>
+        <select id="filterTerritorio" class="input-select">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">Sistema</div>
+        <select id="filterSistema" class="input-select">
+          <option value="">Todos</option>
+          <option value="OPEN">OPEN (8...)</option>
+          <option value="FAN">FAN (3...)</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">Alarmas</div>
+        <select id="filterAlarma" class="input-select">
+          <option value="">Todas</option>
+          <option value="con-alarma">Con alarma</option>
+          <option value="sin-alarma">Sin alarma</option>
+        </select>
+      </div>
+      
+      <div class="filter-group filter-search">
+        <div class="filter-label">🔍 Búsqueda Múltiple</div>
+        <input type="text" id="quickSearch" class="input-field" placeholder="Ej: VLU901;CON376D;RSC397B">
+        <div class="search-help">Usa ; para múltiples zonas • Sin acentos</div>
+      </div>
+      
+      <div class="filter-actions">
+        <button class="btn btn-secondary" onclick="clearFilters()">
+          🔄 Limpiar
+        </button>
+      </div>
+    </nav>
+
+    <main class="main-content">
+      
+      <section class="stats-grid" id="statsGrid">
+        <div class="loading-message">
+          <div class="spinner"></div>
+          <p>Carga los archivos para comenzar</p>
+        </div>
+      </section>
+
+      <section class="content-tabs">
+        <div class="tabs-nav">
+          <button class="tab-btn active" data-tab="zonas" onclick="switchTab('zonas')">
+            🗺️ Zonas
+          </button>
+          <button class="tab-btn" data-tab="cmts" onclick="switchTab('cmts')">
+            🖥️ CMTS
+          </button>
+          <button class="tab-btn" data-tab="edificios" onclick="switchTab('edificios')">
+            🏢 Edificios
+          </button>
+          <button class="tab-btn" data-tab="equipos" onclick="switchTab('equipos')">
+            📱 Equipos
+          </button>
+        </div>
+
+        <div class="tabs-content">
+          <div class="tab-panel active" id="zonasPanel">
+            <div class="loading-message">
+              <p>Los datos de zonas aparecerán aquí</p>
+            </div>
+          </div>
+          
+          <div class="tab-panel" id="cmtsPanel">
+            <div class="loading-message">
+              <p>Los datos agrupados por CMTS aparecerán aquí</p>
+            </div>
+          </div>
+          
+          <div class="tab-panel" id="edificiosPanel">
+            <div class="loading-message">
+              <p>Los datos de edificios aparecerán aquí</p>
+            </div>
+          </div>
+          
+          <div class="tab-panel" id="equiposPanel">
+            <div class="loading-message">
+              <p>Los equipos por zona aparecerán aquí</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="export-section">
+        <button class="btn btn-success" id="btnExportExcel" disabled onclick="exportExcelVista()">
+          📥 Exportar vista (Excel)
+        </button>
+        <button class="btn btn-secondary" id="btnExportExcelZonas" disabled onclick="exportExcelZonasCrudo()">
+          📥 Exportar zonas (crudo)
+        </button>
+      </div>
+    </main>
+
+    <footer class="app-footer">
+      <p>Panel Fulfillment v4.9 MEJORADO © 2025</p>
+      <p class="credits">Creado por Gabriel Palazzini by Checho</p>
+    </footer>
+  </div>
+
+  <!-- Modal Detalle de Zona -->
+  <div id="modalBackdrop" class="modal-backdrop" onclick="closeModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle">Detalle de Zona</div>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+      
+      <div class="modal-filters" id="modalFilters">
+        <div class="filter-group" style="min-width: 200px;">
+          <div class="filter-label">Filtrar por Horario</div>
+          <select id="filterHorario" class="input-select" onchange="applyModalFilters()">
+            <option value="">Todos los horarios</option>
+            <option value="0-6">00:00 - 06:00</option>
+            <option value="6-12">06:00 - 12:00</option>
+            <option value="12-18">12:00 - 18:00</option>
+            <option value="18-24">18:00 - 24:00</option>
+          </select>
+        </div>
+        
+        <div class="filter-group" style="min-width: 200px;">
+          <div class="filter-label">Filtrar por Día</div>
+          <select id="filterDia" class="input-select" onchange="applyModalFilters()">
+            <option value="">Todos los días</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="selectAllOrders" onchange="toggleSelectAll()">
+            <span>Seleccionar Todas</span>
+          </label>
+        </div>
+      </div>
+      
+      <div class="modal-body" id="modalBody">
+        <div class="loading-message">
+          <div class="spinner"></div>
+          <p>Cargando detalles...</p>
+        </div>
+      </div>
+      
+      <div class="modal-footer" id="modalFooter">
+        <div class="selection-info" id="selectionInfo">
+          0 órdenes seleccionadas
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-warning" id="btnExportBEFAN" disabled onclick="exportBEFAN()">
+            📤 Exportar BEFAN (TXT)
+          </button>
+          <button class="btn btn-secondary" onclick="closeModal()">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Alarma -->
+  <div id="alarmaBackdrop" class="modal-backdrop" onclick="closeAlarmaModal()">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width: 1000px;">
+      <div class="modal-header">
+        <div class="modal-title">🚨 Información de Alarmas</div>
+        <button class="modal-close" onclick="closeAlarmaModal()">×</button>
+      </div>
+      
+      <div class="modal-body" id="alarmaModalBody">
+        <div class="loading-message">
+          <div class="spinner"></div>
+          <p>Cargando datos de alarmas...</p>
+        </div>
+      </div>
+      
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeAlarmaModal()">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Edificio -->
+  <div id="edificioBackdrop" class="modal-backdrop" onclick="closeEdificioModal()">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width: 1200px;">
+      <div class="modal-header">
+        <div class="modal-title" id="edificioModalTitle">Detalle de Edificio</div>
+        <button class="modal-close" onclick="closeEdificioModal()">×</button>
+      </div>
+      
+      <div class="modal-body" id="edificioModalBody">
+        <div class="loading-message">
+          <div class="spinner"></div>
+          <p>Cargando órdenes del edificio...</p>
+        </div>
+      </div>
+      
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeEdificioModal()">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por ingresos');
+    
+    const CONFIG = { 
+      defaultDays: 3, 
+      codigo_befan: 'FR461',
+      estadosPermitidos: [
+        'NUEVA',
+        'EN PROGRESO',
+        'PENDIENTE DE ACCION',
+        'PROGRAMADA',
+        'PENDIENTE DE CONTACTO',
+        'EN ESPERA DE EJECUCION'
+      ],
+      estadosOcultosPorDefecto: ['CANCELADA','CERRADA']
+    };
+    
+    const FMS_TIPOS = {
+      'ED': 'Edificio',
+      'CDO': 'CDO',
+      'PNO': 'Puerto Nodo Óptico',
+      'FA': 'Fuente Alimentación',
+      'NO': 'Nodo Óptico',
+      'LE': 'Line Extender',
+      'MB': 'Mini Bridge',
+      'SR_HUB': 'Sitio Red Hub',
+      'CMTS': 'CMTS',
+      'SITIO_MOVIL': 'Sitio Móvil',
+      'TR': 'Troncal',
+      'EDF': 'Edificio FTTH',
+      'CE': 'Caja Empalme',
+      'NAP': 'NAP'
+    };
+    
+    function stripAccents(s=''){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+    
+    function findDispositivosColumn(rowObj){
+      const keys = Object.keys(rowObj||{});
+      for (const k of keys){
+        const nk = stripAccents(k.toLowerCase());
+        if (nk.includes('informacion') && nk.includes('dispositivo')) return k;
+      }
+      return rowObj['Informacion Dispositivos'] ? 'Informacion Dispositivos'
+           : rowObj['Información Dispositivos'] ? 'Información Dispositivos'
+           : null;
+    }
+    
+    const DateUtils = {
+      parse(str) {
+        if (!str) return null;
+        const match = String(str).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (match) return new Date(match[3], match[2] - 1, match[1]);
+        return new Date(str);
+      },
+      format(date) {
+        if (!date) return '';
+        const d = String(date.getDate()).padStart(2,'0');
+        const m = String(date.getMonth()+1).padStart(2,'0');
+        return `${d}/${m}/${date.getFullYear()}`;
+      },
+      formatWithTime(date) {
+        if (!date) return '';
+        const d = String(date.getDate()).padStart(2,'0');
+        const m = String(date.getMonth()+1).padStart(2,'0');
+        const h = String(date.getHours()).padStart(2,'0');
+        const min = String(date.getMinutes()).padStart(2,'0');
+        return `${d}/${m}/${date.getFullYear()} ${h}:${min}`;
+      },
+      toDayKey(date) {
+        const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        return d.getTime();
+      },
+      getHour(date) {
+        return date.getHours();
+      },
+      daysBetween(date1, date2) {
+        const oneDay = 24 * 60 * 60 * 1000;
+        return Math.round(Math.abs((date1 - date2) / oneDay));
+      }
+    };
+    
+    const NumberUtils = {
+      format(num, dec=0) {
+        if (typeof num !== 'number') return '0';
+        return num.toFixed(dec).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      }
+    };
+    
+    const TextUtils = {
+      normalize(text) {
+        return String(text||'')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g,'')
+          .trim();
+      },
+      matches(text, query) {
+        return this.normalize(text).includes(this.normalize(query));
+      },
+      matchesMultiple(text, queries) {
+        const normalized = this.normalize(text);
+        return queries.some(q => normalized.includes(this.normalize(q)));
+      },
+      parseDispositivosJSON(jsonStr) {
+        try {
+          if (!jsonStr) return [];
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const arr = parsed?.openResp || parsed?.open_response || parsed?.data || [];
+            if (Array.isArray(arr)) {
+              return arr.map(d => ({
+                category: d.category || '',
+                description: d.description || '',
+                model: d.model || '',
+                serialNumber: d.serialNumber || d.serial || '',
+                macAddress: d.macAddress || d.mac || '',
+                type: d.type || ''
+              }));
+            }
+          } catch { /* sigue con regex */ }
+          const get = (f) => {
+            const re = new RegExp(`"${f}"\\s*:\\s*"([^"]*)"`, 'i');
+            const m = String(jsonStr).match(re);
+            return m ? m[1] : '';
+          };
+          if (/macAddress|serialNumber|model|category|description/i.test(jsonStr)){
+            return [{
+              category: get('category'),
+              description: get('description'),
+              model: get('model'),
+              serialNumber: get('serialNumber'),
+              macAddress: get('macAddress'),
+              type: get('type')
+            }];
+          }
+        } catch {}
+        return [];
+      },
+      detectarSistema(numCaso) {
+        const numStr = String(numCaso || '').trim();
+        if (numStr.startsWith('8')) return 'OPEN';
+        if (numStr.startsWith('3')) return 'FAN';
+        return '';
+      }
+    };
+    
+    function toast(msg) {
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), 4000);
+    }
+    
+    function toggleUtilities() {
+      const menu = document.getElementById('utilitiesMenu');
+      menu.classList.toggle('show');
+    }
+
+    document.addEventListener('click', (e) => {
+      const dropdown = document.querySelector('.utilities-dropdown');
+      const menu = document.getElementById('utilitiesMenu');
+      if (dropdown && !dropdown.contains(e.target)) {
+        menu.classList.remove('show');
+      }
+    });
+    
+    function openPlanillasNewTab() {
+      document.getElementById('utilitiesMenu').classList.remove('show');
+      window.open('about:blank', '_blank');
+      toast('📋 Abre la funcionalidad de Planillas en otra pestaña');
+    }
+    
+    class DataProcessor {
+      constructor() {
+        this.consolidado1 = null;
+        this.consolidado2 = null;
+        this.nodosData = null;
+        this.fmsData = null;
+        this.nodosMap = new Map();
+        this.fmsMap = new Map();
+        this.allColumns = new Set();
+      }
+      
+      async loadExcel(file, tipo) {
+        try {
+          const data = new Uint8Array(await file.arrayBuffer());
+          
+          const wb = XLSX.read(data, {
+            type: 'array',
+            cellDates: false,
+            cellText: false,
+            cellFormula: false,
+            raw: false
+          });
+          
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const range = XLSX.utils.decode_range(ws['!ref']);
+          
+          let headerRow = 0;
+          for (let R = 0; R <= 20; R++) {
+            let hasContent = false;
+            for (let C = 0; C <= 15; C++) {
+              const cellAddr = XLSX.utils.encode_cell({r: R, c: C});
+              const cell = ws[cellAddr];
+              if (cell && cell.v) {
+                const cellValue = String(cell.v).toLowerCase();
+                if (cellValue.includes('zona') && cellValue.includes('tecnica')) {
+                  headerRow = R;
+                  console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
+                  hasContent = true;
+                  break;
+                }
+                if (cellValue.includes('numero') && (cellValue.includes('caso') || cellValue.includes('cuenta'))) {
+                  headerRow = R;
+                  console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
+                  hasContent = true;
+                  break;
+                }
+              }
+            }
+            if (hasContent) break;
+          }
+          
+          console.log(`📋 Usando fila ${headerRow + 1} como headers`);
+          
+          range.s.r = headerRow;
+          ws['!ref'] = XLSX.utils.encode_range(range);
+          
+          const jsonData = XLSX.utils.sheet_to_json(ws, { 
+            defval: '', 
+            raw: false, 
+            dateNF: 'dd/mm/yyyy' 
+          });
+          
+          console.log(`✅ Archivo tipo ${tipo}: ${jsonData.length} registros`);
+          console.log(`📋 Primeras 10 columnas:`, jsonData.length > 0 ? Object.keys(jsonData[0]).slice(0, 10) : []);
+          
+          if (jsonData.length > 0) {
+            const zonaCols = Object.keys(jsonData[0]).filter(k => k.toLowerCase().includes('zona'));
+            if (zonaCols.length > 0) {
+              console.log(`✅ Columnas de ZONA encontradas:`, zonaCols);
+              zonaCols.forEach(col => {
+                const ejemplo = jsonData[0][col];
+                console.log(`   "${col}" = "${ejemplo}"`);
+              });
+            }
+          }
+          
+          if (tipo === 1) this.consolidado1 = jsonData;
+          else if (tipo === 2) this.consolidado2 = jsonData;
+          else if (tipo === 3) {
+            this.nodosData = jsonData;
+            this.processNodos();
+          } else if (tipo === 4) {
+            this.fmsData = jsonData;
+            this.processFMS();
+          }
+          
+          if (jsonData.length > 0) {
+            Object.keys(jsonData[0]).forEach(col => this.allColumns.add(col));
+          }
+          
+          return {success: true, rows: jsonData.length};
+        } catch (e) {
+          console.error('Error loading Excel:', e);
+          return {success: false, error: e.message};
+        }
+      }
+      
+      async loadCSV(file) {
+        try {
+          const text = await file.text();
+          const lines = text.split('\n').filter(l => l.trim());
+          
+          if (lines.length < 2) {
+            return {success: false, error: 'CSV vacío'};
+          }
+          
+          const parseCSVLine = (line) => {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+              const char = line[i];
+              
+              if (char === '"') {
+                inQuotes = !inQuotes;
+              } else if (char === ',' && !inQuotes) {
+                result.push(current.trim());
+                current = '';
+              } else {
+                current += char;
+              }
+            }
+            result.push(current.trim());
+            return result;
+          };
+          
+          const headers = parseCSVLine(lines[0]);
+          const rows = [];
+          
+          for (let i = 1; i < lines.length; i++) {
+            const values = parseCSVLine(lines[i]);
+            const obj = {};
+            headers.forEach((h, idx) => {
+              obj[h] = values[idx] || '';
+            });
+            rows.push(obj);
+          }
+          
+          console.log(`✅ CSV Alarmas: ${rows.length} alarmas leídas`);
+          this.fmsData = rows;
+          this.processFMS();
+          
+          return {success: true, rows: rows.length};
+        } catch (e) {
+          console.error('Error loading CSV:', e);
+          return {success: false, error: e.message};
+        }
+      }
+      
+      processNodos() {
+        if (!this.nodosData) return;
+        
+        this.nodosData.forEach(n => {
+          const nodo = String(n['Nodo'] || '').trim();
+          if (!nodo || nodo === '-' || nodo.includes('SIN_NODO')) return;
+          
+          const up = parseFloat(n['Up']) || 0;
+          const down = parseFloat(n['Down']) || 0;
+          const cmts = String(n['CMTS'] || '').trim();
+          
+          let estado = 'up';
+          if (down > 50) estado = 'critical';
+          else if (down > 0) estado = 'down';
+          
+          this.nodosMap.set(nodo, {
+            cmts,
+            up,
+            down,
+            estado,
+            total: up + down
+          });
+        });
+        
+        console.log(`✅ Procesados ${this.nodosMap.size} nodos`);
+      }
+      
+      processFMS() {
+        if (!this.fmsData) return;
+        
+        console.log('Procesando alarmas FMS...');
+        
+        this.fmsData.forEach(f => {
+          const zonaTecnica = String(f['networkElement.technicalZone'] || '').trim();
+          if (!zonaTecnica) return;
+          
+          const alarma = {
+            eventId: f['eventId'] || '',
+            type: f['type'] || '',
+            creationDate: f['creationDate'] || '',
+            recoveryDate: f['recoveryDate'] || '',
+            elementType: f['networkElement.type'] || '',
+            elementCode: f['networkElement.code'] || '',
+            damage: f['damage'] || '',
+            incidentClassification: f['incidentClassification'] || '',
+            damageClassification: f['damageClassification'] || '',
+            claims: f['claims'] || '',
+            childCount: f['networkElement.childCount'] || '',
+            cmCount: f['networkElement.cmCount'] || '',
+            isActive: !f['recoveryDate'] || f['recoveryDate'] === ''
+          };
+          
+          if (!this.fmsMap.has(zonaTecnica)) {
+            this.fmsMap.set(zonaTecnica, []);
+          }
+          this.fmsMap.get(zonaTecnica).push(alarma);
+        });
+        
+        console.log(`✅ Procesadas alarmas para ${this.fmsMap.size} zonas técnicas`);
+      }
+      
+      merge() {
+        if (!this.consolidado1 && !this.consolidado2) return [];
+        if (!this.consolidado1) return this.consolidado2 || [];
+        if (!this.consolidado2) return this.consolidado1 || [];
+        
+        const map = new Map();
+        
+        this.consolidado1.forEach(r => {
+          const cita = r['Número de cita'];
+          if (cita) {
+            if (!map.has(cita)) {
+              map.set(cita, {...r, _merged: false});
+            }
+          }
+        });
+        
+        this.consolidado2.forEach(r => {
+          const cita = r['Número de cita'];
+          if (cita) {
+            if (map.has(cita)) {
+              const existing = map.get(cita);
+              Object.keys(r).forEach(key => {
+                if (!existing[key] || existing[key] === '') {
+                  existing[key] = r[key];
+                }
+              });
+              existing._merged = true;
+            } else {
+              map.set(cita, {...r, _merged: false});
+            }
+          }
+        });
+        
+        const result = Array.from(map.values());
+        console.log(`✅ Total órdenes únicas (deduplicadas): ${result.length}`);
+        
+        return result;
+      }
+      
+      processZones(rows) {
+        const zoneGroups = new Map();
+        
+        rows.forEach(r => {
+          const {zonaPrincipal, tipo} = this.getZonaPrincipal(r);
+          if (!zonaPrincipal) return;
+          
+          if (!zoneGroups.has(zonaPrincipal)) {
+            zoneGroups.set(zonaPrincipal, {
+              zona: zonaPrincipal,
+              tipo: tipo,
+              zonaHFC: r['Zona Tecnica HFC'] || r['Zona Tecnica'] || '',
+              zonaFTTH: r['Zona Tecnica FTTH'] || '',
+              territorio: r['Territorio de servicio: Nombre'] || r['Territorio'] || '',
+              ordenes: []
+            });
+          }
+          
+          zoneGroups.get(zonaPrincipal).ordenes.push(r);
+        });
+        
+        return Array.from(zoneGroups.values());
+      }
+      
+      getZonaPrincipal(orden) {
+        const hfc = orden['Zona Tecnica HFC'] || orden['Zona Tecnica'] || '';
+        const ftth = orden['Zona Tecnica FTTH'] || '';
+        
+        const esFTTH = /9\d{2}/.test(hfc);
+        
+        if (esFTTH && ftth) {
+          return {zonaPrincipal: ftth, tipo: 'FTTH'};
+        }
+        
+        return {zonaPrincipal: hfc || ftth, tipo: 'HFC'};
+      }
+      
+      analyzeZones(zones, daysWindow) {
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        
+        console.log(`✅ Analizando zonas con ventana de ${daysWindow} días`);
+        
+        return zones.map(z => {
+          const seenOTperDay = new Map();
+          const ordenesPerDay = new Map();
+          let ordenesEnVentana = 0;
+          
+          const diagnosticos = new Set();
+          
+          z.ordenes.forEach(o => {
+            const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
+            const dt = DateUtils.parse(fecha);
+            if (!dt) return;
+            
+            const daysAgo = DateUtils.daysBetween(today, dt);
+            
+            if (daysAgo <= daysWindow) {
+              ordenesEnVentana++;
+              
+              const dk = DateUtils.toDayKey(dt);
+              if (!seenOTperDay.has(dk)) seenOTperDay.set(dk, new Set());
+              if (!ordenesPerDay.has(dk)) ordenesPerDay.set(dk, []);
+              
+              const cita = o['Número de cita'];
+              if (cita) {
+                seenOTperDay.get(dk).add(cita);
+                ordenesPerDay.get(dk).push(o);
+              }
+              
+              const diag = o['Diagnostico Tecnico'] || o['Diagnóstico Técnico'] || '';
+              if (diag) diagnosticos.add(diag);
+            }
+          });
+          
+          const todayKey = DateUtils.toDayKey(today);
+          const yesterdayKey = DateUtils.toDayKey(new Date(today.getTime() - 86400000));
+          
+          const ingresoN = seenOTperDay.get(todayKey)?.size || 0;
+          const ingresoN1 = seenOTperDay.get(yesterdayKey)?.size || 0;
+          const maxDia = Math.max(0, ...Array.from(seenOTperDay.values()).map(s => s.size));
+          
+          const score = 4 * ingresoN + 2 * ingresoN1 + 1.5 * maxDia;
+          const criticidad = score >= 12 ? 'CRÍTICO' : score >= 7 ? 'ALTO' : 'MEDIO';
+          
+          const last7Days = [];
+          const last7DaysCounts = [];
+          for (let i = 6; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            const dk = DateUtils.toDayKey(date);
+            last7Days.push(DateUtils.format(date).slice(0, 5));
+            last7DaysCounts.push(seenOTperDay.get(dk)?.size || 0);
+          }
+          
+          let nodoInfo = null;
+          if (this.nodosMap.has(z.zona)) {
+            nodoInfo = this.nodosMap.get(z.zona);
+          } else if (z.zonaHFC && this.nodosMap.has(z.zonaHFC)) {
+            nodoInfo = this.nodosMap.get(z.zonaHFC);
+          }
+          
+          const alarmasFMS = this.fmsMap.get(z.zona) || 
+                           this.fmsMap.get(z.zonaHFC) || 
+                           this.fmsMap.get(z.zonaFTTH) || [];
+          const alarmasActivas = alarmasFMS.filter(a => a.isActive);
+          
+          return {
+            ...z,
+            totalOTs: ordenesEnVentana,
+            ingresoN,
+            ingresoN1,
+            maxDia,
+            score,
+            criticidad,
+            cmts: nodoInfo?.cmts || '',
+            nodoUp: nodoInfo?.up || 0,
+            nodoDown: nodoInfo?.down || 0,
+            nodoEstado: nodoInfo?.estado || 'unknown',
+            last7Days,
+            last7DaysCounts,
+            diagnosticos: Array.from(diagnosticos),
+            alarmas: alarmasFMS,
+            alarmasActivas: alarmasActivas.length,
+            tieneAlarma: alarmasActivas.length > 0,
+            ordenesOriginales: z.ordenes
+          };
+        }).sort((a,b) => b.score - a.score);
+      }
+      
+      analyzeCMTS(zones) {
+        const cmtsGroups = new Map();
+        
+        zones.forEach(z => {
+          if (!z.cmts) return;
+          
+          if (!cmtsGroups.has(z.cmts)) {
+            cmtsGroups.set(z.cmts, {
+              cmts: z.cmts,
+              zonas: [],
+              totalOTs: 0,
+              zonasUp: 0,
+              zonasDown: 0,
+              zonasCriticas: 0
+            });
+          }
+          
+          const group = cmtsGroups.get(z.cmts);
+          group.zonas.push(z);
+          group.totalOTs += z.totalOTs;
+          
+          if (z.nodoEstado === 'up') group.zonasUp++;
+          else if (z.nodoEstado === 'down' || z.nodoEstado === 'critical') group.zonasDown++;
+          
+          if (z.nodoEstado === 'critical') group.zonasCriticas++;
+        });
+        
+        return Array.from(cmtsGroups.values()).sort((a,b) => b.totalOTs - a.totalOTs);
+      }
+    }
+    
+    const dataProcessor = new DataProcessor();
+    
+    // Filtros MEJORADOS con ordenamiento
+    const Filters = {
+      catec: false,
+      ftth: false,
+      excludeFTTH: false,
+      nodoEstado: '',
+      cmts: '',
+      days: 3,
+      territorio: '',
+      sistema: '',
+      alarma: '',
+      quickSearch: '',
+      showAllStates: false,
+      ordenarPorIngreso: 'desc', // 'desc', 'asc', o ''
+      equipoModelo: '',
+      equipoMarca: '',
+      
+      apply(rows) {
+        let filtered = rows.slice();
+        
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        
+        filtered = filtered.filter(r => {
+          const fecha = r['Fecha de creación'] || r['Fecha/Hora de apertura'] || r['Fecha de inicio'];
+          const dt = DateUtils.parse(fecha);
+          if (!dt) return false;
+          const daysAgo = DateUtils.daysBetween(today, dt);
+          return daysAgo <= this.days;
+        });
+        
+        if (!this.showAllStates) {
+          filtered = filtered.filter(r => {
+            const estRaw = (r['Estado.1'] || r['Estado'] || r['Estado.2'] || '').toString().toUpperCase().trim();
+            if (!estRaw) return false;
+            if (CONFIG.estadosOcultosPorDefecto.includes(estRaw)) return false;
+            return CONFIG.estadosPermitidos.includes(estRaw);
+          });
+        }
+        
+        if (this.catec) {
+          filtered = filtered.filter(r => {
+            const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
+            return tipo.toUpperCase().includes('CATEC');
+          });
+        }
+        
+        if (this.ftth) {
+          filtered = filtered.filter(r => {
+            const hfc = r['Zona Tecnica HFC'] || '';
+            return /9\d{2}/.test(hfc);
+          });
+        }
+        
+        if (this.excludeFTTH) {
+          filtered = filtered.filter(r => {
+            const hfc = r['Zona Tecnica HFC'] || '';
+            return !/9\d{2}/.test(hfc);
+          });
+        }
+        
+        if (this.territorio) {
+          filtered = filtered.filter(r => {
+            const terr = r['Territorio de servicio: Nombre'] || '';
+            return terr === this.territorio;
+          });
+        }
+        
+        if (this.sistema) {
+          filtered = filtered.filter(r => {
+            const numCaso = r['Número del caso'] || r['Caso Externo'] || '';
+            const sistema = TextUtils.detectarSistema(numCaso);
+            return sistema === this.sistema;
+          });
+        }
+        
+        if (this.quickSearch) {
+          const queries = this.quickSearch.split(';').map(q => q.trim()).filter(Boolean);
+          
+          filtered = filtered.filter(r => {
+            const searchable = [
+              r['Zona Tecnica HFC'],
+              r['Zona Tecnica FTTH'],
+              r['Calle'],
+              r['Caso Externo'],
+              r['External Case Id'],
+              r['Número del caso']
+            ].join(' ');
+            
+            if (queries.length === 1) {
+              return TextUtils.matches(searchable, queries[0]);
+            } else {
+              return TextUtils.matchesMultiple(searchable, queries);
+            }
+          });
+        }
+        
+        return filtered;
+      },
+      
+      applyToZones(zones) {
+        let filtered = zones.slice();
+        
+        if (this.nodoEstado) {
+          filtered = filtered.filter(z => {
+            if (this.nodoEstado === 'up') return z.nodoEstado === 'up';
+            if (this.nodoEstado === 'down') return z.nodoEstado === 'down' || z.nodoEstado === 'critical';
+            if (this.nodoEstado === 'critical') return z.nodoEstado === 'critical';
+            return true;
+          });
+        }
+        
+        if (this.cmts) {
+          filtered = filtered.filter(z => z.cmts === this.cmts);
+        }
+        
+        if (this.alarma) {
+          if (this.alarma === 'con-alarma') {
+            filtered = filtered.filter(z => z.tieneAlarma);
+          } else if (this.alarma === 'sin-alarma') {
+            filtered = filtered.filter(z => !z.tieneAlarma);
+          }
+        }
+        
+        // NUEVO: Aplicar ordenamiento por ingreso
+        if (this.ordenarPorIngreso === 'desc') {
+          filtered.sort((a, b) => b.totalOTs - a.totalOTs);
+        } else if (this.ordenarPorIngreso === 'asc') {
+          filtered.sort((a, b) => a.totalOTs - b.totalOTs);
+        }
+        
+        return filtered;
+      }
+    };
+    
+    // UIRenderer (completo)
+    const UIRenderer = {
+      renderStats(data) {
+        return `
+          <div class="stat-card"><div class="stat-label">Total Órdenes</div><div class="stat-value">${NumberUtils.format(data.total)}</div></div>
+          <div class="stat-card"><div class="stat-label">Zonas Analizadas</div><div class="stat-value">${NumberUtils.format(data.zonas)}</div></div>
+          <div class="stat-card"><div class="stat-label">Zonas Críticas</div><div class="stat-value">${NumberUtils.format(data.criticas)}</div></div>
+          <div class="stat-card"><div class="stat-label">Zonas FTTH</div><div class="stat-value">${NumberUtils.format(data.ftth)}</div></div>
+          <div class="stat-card"><div class="stat-label">Con Alarmas</div><div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div></div>
+          <div class="stat-card"><div class="stat-label">Nodos Críticos</div><div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div></div>
+        `;
+      },
+      
+      renderSparkline(counts, labels) {
+        const max = Math.max(...counts, 1);
+        const width = 120;
+        const height = 30;
+        const barWidth = width / counts.length;
+        
+        let svg = `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
+        
+        counts.forEach((count, i) => {
+          const barHeight = (count / max) * height;
+          const x = i * barWidth;
+          const y = height - barHeight;
+          const color = count >= max * 0.7 ? '#D13438' : count >= max * 0.4 ? '#F7630C' : '#0078D4';
+          
+          svg += `<rect x="${x}" y="${y}" width="${barWidth - 2}" height="${barHeight}" fill="${color}" rx="2"/>`;
+        });
+        
+        svg += '</svg>';
+        return svg;
+      },
+      
+      renderZonas(zones) {
+        if (!zones.length) return '<div class="loading-message"><p>No hay zonas para mostrar</p></div>';
+        
+        let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+        html += '<th>Zona</th><th>Tipo</th><th>Red</th><th>CMTS</th><th>Nodo</th>';
+        html += '<th>Alarma</th><th>Gráfico 7 Días</th>';
+        html += '<th class="number">Total</th><th class="number">N</th><th class="number">N-1</th>';
+        html += '<th>Acción</th>';
+        html += '</tr></thead><tbody>';
+        
+        zones.slice(0, 200).forEach((z, idx) => {
+          const badgeTipo = z.tipo === 'FTTH' ? '<span class="badge badge-ftth">FTTH</span>' : '<span class="badge badge-hfc">HFC</span>';
+          const red = z.tipo === 'FTTH' ? z.zonaHFC : '-';
+          
+          let badgeNodo = '<span class="badge">Sin datos</span>';
+          if (z.nodoEstado === 'up') {
+            badgeNodo = `<span class="badge badge-up">✓ UP (${z.nodoUp})</span>`;
+          } else if (z.nodoEstado === 'critical') {
+            badgeNodo = `<span class="badge badge-critical">⚠ CRÍTICO (↓${z.nodoDown})</span>`;
+          } else if (z.nodoEstado === 'down') {
+            badgeNodo = `<span class="badge badge-down">↓ DOWN (${z.nodoDown})</span>`;
+          }
+          
+          let badgeAlarma = '<span class="badge">Sin alarma</span>';
+          if (z.tieneAlarma) {
+            badgeAlarma = `<span class="badge badge-alarma badge-alarma-activa" onclick="showAlarmaInfo(${idx})">🚨 ${z.alarmasActivas} Activa(s)</span>`;
+          }
+          
+          const cmtsShort = z.cmts ? z.cmts.substring(0, 15) + (z.cmts.length > 15 ? '...' : '') : '-';
+          const sparkline = this.renderSparkline(z.last7DaysCounts, z.last7Days);
+          
+          html += `<tr>
+            <td><strong>${z.zona}</strong></td>
+            <td>${badgeTipo}</td>
+            <td>${red}</td>
+            <td title="${z.cmts}">${cmtsShort}</td>
+            <td>${badgeNodo}</td>
+            <td>${badgeAlarma}</td>
+            <td>${sparkline}</td>
+            <td class="number">${z.totalOTs}</td>
+            <td class="number">${z.ingresoN}</td>
+            <td class="number">${z.ingresoN1}</td>
+            <td><button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openModal(${idx})">👁️ Ver</button></td>
+          </tr>`;
+        });
+        
+        html += '</tbody></table></div></div>';
+        return html;
+      },
+      
+      renderCMTS(cmtsData) {
+        if (!cmtsData.length) return '<div class="loading-message"><p>No hay datos de CMTS para mostrar</p></div>';
+        
+        let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+        html += '<th>CMTS</th><th class="number">Zonas</th><th class="number">Total OTs</th>';
+        html += '<th class="number">Zonas UP</th><th class="number">Zonas DOWN</th><th class="number">Zonas Críticas</th>';
+        html += '<th>Acción</th>';
+        html += '</tr></thead><tbody>';
+        
+        cmtsData.forEach((c, idx) => {
+          const cmtsShort = c.cmts.substring(0, 30) + (c.cmts.length > 30 ? '...' : '');
+          
+          html += `<tr>
+            <td title="${c.cmts}"><strong>${cmtsShort}</strong></td>
+            <td class="number">${c.zonas.length}</td>
+            <td class="number">${c.totalOTs}</td>
+            <td class="number">${c.zonasUp}</td>
+            <td class="number">${c.zonasDown}</td>
+            <td class="number">${c.zonasCriticas}</td>
+            <td><button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openCMTSDetail('${c.cmts.replace(/'/g, "\\'")}')">👁️ Ver Zonas</button></td>
+          </tr>`;
+        });
+        
+        html += '</tbody></table></div></div>';
+        return html;
+      },
+      
+      renderEdificios(ordenes) {
+        const edificios = new Map();
+        
+        ordenes.forEach(o => {
+          const dir = TextUtils.normalize(o['Calle']);
+          if (!dir || dir.length < 5) return;
+          
+          if (!edificios.has(dir)) {
+            edificios.set(dir, {
+              direccion: o['Calle'],
+              zona: o['Zona Tecnica HFC'] || o['Zona Tecnica FTTH'],
+              territorio: o['Territorio de servicio: Nombre'] || '',
+              casos: []
+            });
+          }
+          edificios.get(dir).casos.push(o);
+        });
+        
+        const sorted = Array.from(edificios.values())
+          .filter(e => e.casos.length >= 2)
+          .sort((a,b) => b.casos.length - a.casos.length)
+          .slice(0, 50);
+        
+        if (!sorted.length) return '<div class="loading-message"><p>No hay edificios con 2+ incidencias</p></div>';
+        
+        let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+        html += '<th>Dirección</th><th>Zona</th><th>Territorio</th><th class="number">Total OTs</th>';
+        html += '</tr></thead><tbody>';
+        
+        sorted.forEach((e, idx) => {
+          html += `<tr class="clickable" onclick="showEdificioDetail(${idx})">
+            <td><strong>${e.direccion}</strong></td>
+            <td>${e.zona}</td>
+            <td>${e.territorio}</td>
+            <td class="number">${e.casos.length}</td>
+          </tr>`;
+        });
+        
+        html += '</tbody></table></div></div>';
+        
+        window.edificiosData = sorted;
+        
+        return html;
+      },
+      
+      renderEquipos(ordenes) {
+        const grupos = new Map();
+        let debugMuestra = 0;
+
+        ordenes.forEach((o, idx) => {
+          const zona = o['Zona Tecnica HFC'] || o['Zona Tecnica FTTH'] || '';
+          const numCaso = o['Número del caso'] || o['Caso Externo'] || '';
+          const sistema = TextUtils.detectarSistema(numCaso);
+
+          const colInfo = findDispositivosColumn(o);
+          const infoDispositivos = colInfo ? o[colInfo] : '';
+
+          if (debugMuestra < 3) {
+            console.log('[Equipos] Orden muestra', idx, {zona, numCaso, colInfoEncontrada: colInfo});
+            debugMuestra++;
+          }
+
+          const dispositivos = TextUtils.parseDispositivosJSON(infoDispositivos);
+          dispositivos.forEach(d => {
+            const item = {
+              zona,
+              numCaso,
+              sistema,
+              serialNumber: d.serialNumber,
+              macAddress: d.macAddress,
+              tipo: d.description,
+              marca: d.category,
+              modelo: d.model
+            };
+            if (!grupos.has(zona)) grupos.set(zona, []);
+            grupos.get(zona).push(item);
+          });
+        });
+
+        // Obtener modelos y marcas únicos
+        const modelos = new Set();
+        const marcas = new Set();
+        grupos.forEach(arr => {
+          arr.forEach(e => {
+            if (e.modelo) modelos.add(e.modelo);
+            if (e.marca) marcas.add(e.marca);
+          });
+        });
+
+        const zonas = Array.from(grupos.keys()).sort((a,b)=>a.localeCompare(b));
+        if (!zonas.length) {
+          return '<div class="loading-message"><p>⚠️ No se encontraron equipos en las órdenes (revisa la columna de Información de Dispositivos).</p></div>';
+        }
+
+        if (!window.equiposOpen) window.equiposOpen = new Set();
+
+        // NUEVO: Panel de filtros
+        let html = '<div class="equipos-filters">';
+        html += '<div class="filter-group">';
+        html += '<div class="filter-label">Filtrar por Modelo</div>';
+        html += '<select id="filterEquipoModelo" class="input-select" onchange="applyEquiposFilters()">';
+        html += '<option value="">Todos los modelos</option>';
+        Array.from(modelos).sort().forEach(m => {
+          const selected = Filters.equipoModelo === m ? 'selected' : '';
+          html += `<option value="${m}" ${selected}>${m || '(Sin modelo)'}</option>`;
+        });
+        html += '</select>';
+        html += '</div>';
+
+        html += '<div class="filter-group">';
+        html += '<div class="filter-label">Filtrar por Marca</div>';
+        html += '<select id="filterEquipoMarca" class="input-select" onchange="applyEquiposFilters()">';
+        html += '<option value="">Todas las marcas</option>';
+        Array.from(marcas).sort().forEach(m => {
+          const selected = Filters.equipoMarca === m ? 'selected' : '';
+          html += `<option value="${m}" ${selected}>${m || '(Sin marca)'}</option>`;
+        });
+        html += '</select>';
+        html += '</div>';
+
+        html += '<div class="filter-group">';
+        html += '<button class="btn btn-secondary" onclick="clearEquiposFilters()" style="margin-top: 18px;">🔄 Limpiar filtros</button>';
+        html += '</div>';
+        html += '</div>';
+
+        // Aplicar filtros
+        let gruposFiltrados = new Map();
+        grupos.forEach((arr, zona) => {
+          let filtrado = arr;
+          
+          if (Filters.equipoModelo) {
+            filtrado = filtrado.filter(e => e.modelo === Filters.equipoModelo);
+          }
+          
+          if (Filters.equipoMarca) {
+            filtrado = filtrado.filter(e => e.marca === Filters.equipoMarca);
+          }
+          
+          if (filtrado.length > 0) {
+            gruposFiltrados.set(zona, filtrado);
+          }
+        });
+
+        const zonasFiltradas = Array.from(gruposFiltrados.keys()).sort((a,b)=>a.localeCompare(b));
+        
+        if (zonasFiltradas.length === 0) {
+          html += '<div class="loading-message"><p>No hay equipos que coincidan con los filtros seleccionados</p></div>';
+          return html;
+        }
+
+        html += '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+        html += '<th>Zona</th><th class="number">Equipos</th><th>Acción</th>';
+        html += '</tr></thead><tbody>';
+
+        zonasFiltradas.forEach((z) => {
+          const arr = gruposFiltrados.get(z) || [];
+          const open = window.equiposOpen.has(z);
+          html += `<tr class="clickable" onclick="toggleEquiposGrupo('${z.replace(/'/g,"\\'")}')">
+            <td><strong>${z || '-'}</strong></td>
+            <td class="number">${arr.length}</td>
+            <td><button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="event.stopPropagation(); exportEquiposGrupoExcel('${z.replace(/'/g,"\\'")}', true)">📥 Exportar</button></td>
+          </tr>`;
+
+          if (open) {
+            html += `<tr><td colspan="3">`;
+            html += '<div class="table-container"><div class="table-wrapper"><table class="detail-table"><thead><tr>';
+            html += '<th>Caso</th><th>Sistema</th><th>Serial</th><th>MAC</th><th>Tipo</th><th>Marca</th><th>Modelo</th>';
+            html += '</tr></thead><tbody>';
+            arr.slice(0,1000).forEach(e => {
+              const badge = e.sistema==='OPEN' ? '<span class="badge badge-open">OPEN</span>'
+                           : e.sistema==='FAN' ? '<span class="badge badge-fan">FAN</span>' : '';
+              html += `<tr>
+                <td style="font-family:monospace">${e.numCaso||''}</td>
+                <td>${badge}</td>
+                <td style="font-family:monospace">${e.serialNumber||''}</td>
+                <td style="font-family:monospace">${e.macAddress||''}</td>
+                <td>${e.tipo||''}</td>
+                <td>${e.marca||''}</td>
+                <td>${e.modelo||''}</td>
+              </tr>`;
+            });
+            html += '</tbody></table></div></div>';
+            html += `</td></tr>`;
+          }
+        });
+
+        html += '</tbody></table></div></div>';
+        html += `<p style="text-align:center;margin-top:12px;color:var(--text-secondary)">Total: ${zonasFiltradas.length} zonas • Click para expandir/colapsar • Exporta por zona o global</p>`;
+        
+        window.equiposPorZona = gruposFiltrados;
+        window.equiposPorZonaCompleto = grupos; // Guardamos la data completa
+        
+        return html;
+      }
+    };
+    
+    function applyEquiposFilters() {
+      Filters.equipoModelo = document.getElementById('filterEquipoModelo').value;
+      Filters.equipoMarca = document.getElementById('filterEquipoMarca').value;
+      document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
+    }
+    
+    function clearEquiposFilters() {
+      Filters.equipoModelo = '';
+      Filters.equipoMarca = '';
+      document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
+    }
+    
+    function toggleEquiposGrupo(zona){
+      if (!window.equiposOpen) window.equiposOpen = new Set();
+      if (window.equiposOpen.has(zona)) window.equiposOpen.delete(zona);
+      else window.equiposOpen.add(zona);
+      document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
+    }
+
+    function exportEquiposGrupoExcel(zona, useFiltered = false){
+      const source = useFiltered && window.equiposPorZona ? window.equiposPorZona : window.equiposPorZonaCompleto;
+      
+      if (!source) return toast('No hay datos de equipos');
+      
+      const arr = source.get(zona)||[];
+      if (!arr.length) return toast('No hay equipos en esa zona');
+      
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(arr);
+      XLSX.utils.book_append_sheet(wb, ws, `Equipos_${zona||'NA'}`);
+      
+      const filterInfo = useFiltered && (Filters.equipoModelo || Filters.equipoMarca) 
+        ? `_${Filters.equipoModelo || 'TodosModelos'}_${Filters.equipoMarca || 'TodasMarcas'}`
+        : '';
+      
+      XLSX.writeFile(wb, `Equipos_${zona||'NA'}${filterInfo}_${new Date().toISOString().slice(0,10)}.xlsx`);
+      toast(`✅ Exportados ${arr.length} equipos de ${zona}`);
+    }
+    
+    let currentData = null;
+    let allZones = [];
+    let allCMTS = [];
+    let currentZone = null;
+    let selectedOrders = new Set();
+    
+    document.addEventListener('DOMContentLoaded', () => {
+      setupEventListeners();
+    });
+    
+    function setupEventListeners() {
+      document.getElementById('fileConsolidado1').addEventListener('change', e => loadFile(e, 1));
+      document.getElementById('fileConsolidado2').addEventListener('change', e => loadFile(e, 2));
+      document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
+      document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
+      
+      document.getElementById('filterCATEC').addEventListener('change', applyFilters);
+      document.getElementById('showAllStates').addEventListener('change', applyFilters);
+      document.getElementById('filterFTTH').addEventListener('change', e => {
+        if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
+        applyFilters();
+      });
+      document.getElementById('filterExcludeFTTH').addEventListener('change', e => {
+        if (e.target.checked) document.getElementById('filterFTTH').checked = false;
+        applyFilters();
+      });
+      document.getElementById('filterNodoEstado').addEventListener('change', applyFilters);
+      document.getElementById('filterCMTS').addEventListener('change', applyFilters);
+      document.getElementById('daysWindow').addEventListener('change', applyFilters);
+      document.getElementById('filterTerritorio').addEventListener('change', applyFilters);
+      document.getElementById('filterSistema').addEventListener('change', applyFilters);
+      document.getElementById('filterAlarma').addEventListener('change', applyFilters);
+      document.getElementById('quickSearch').addEventListener('input', debounce(applyFilters, 300));
+      document.getElementById('ordenarPorIngreso').addEventListener('change', applyFilters);
+    }
+    
+    async function loadFile(e, tipo) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const statusEl = document.getElementById(`status${tipo}`);
+      statusEl.textContent = 'Cargando...';
+      statusEl.classList.remove('loaded');
+      
+      let result;
+      
+      if (tipo === 4 && file.name.endsWith('.csv')) {
+        result = await dataProcessor.loadCSV(file);
+      } else {
+        result = await dataProcessor.loadExcel(file, tipo);
+      }
+      
+      if (result.success) {
+        statusEl.textContent = `✓ ${result.rows} filas cargadas`;
+        statusEl.classList.add('loaded');
+        
+        const nombres = ['Consolidado 1', 'Consolidado 2', 'Nodos UP/DOWN', 'Alarmas FMS'];
+        toast(`${nombres[tipo-1]} cargado: ${result.rows} registros`);
+        
+        if ((dataProcessor.consolidado1 || dataProcessor.consolidado2)) {
+          document.getElementById('mergeStatus').style.display = 'flex';
+          processData();
+        }
+      } else {
+        statusEl.textContent = `✗ Error`;
+        toast(`Error al cargar archivo: ${result.error}`);
+      }
+    }
+    
+    function processData() {
+      const merged = dataProcessor.merge();
+      if (!merged.length) return;
+      
+      const daysWindow = parseInt(document.getElementById('daysWindow').value);
+      
+      const zones = dataProcessor.processZones(merged);
+      allZones = dataProcessor.analyzeZones(zones, daysWindow);
+      allCMTS = dataProcessor.analyzeCMTS(allZones);
+      
+      currentData = {
+        ordenes: merged,
+        zonas: allZones
+      };
+      
+      populateFilters();
+      
+      const stats = {
+        total: allZones.reduce((sum, z) => sum + z.totalOTs, 0),
+        zonas: allZones.length,
+        criticas: allZones.filter(z => z.criticidad === 'CRÍTICO').length,
+        ftth: allZones.filter(z => z.tipo === 'FTTH').length,
+        conAlarmas: allZones.filter(z => z.tieneAlarma).length,
+        nodosCriticos: allZones.filter(z => z.nodoEstado === 'critical').length
+      };
+      
+      document.getElementById('statsGrid').innerHTML = UIRenderer.renderStats(stats);
+      document.getElementById('btnExportExcel').disabled = false;
+      document.getElementById('btnExportExcelZonas').disabled = false;
+      
+      let statusText = `✓ ${merged.length} órdenes procesadas (deduplicadas)`;
+      if (dataProcessor.nodosData) {
+        statusText += ` • ${dataProcessor.nodosMap.size} nodos integrados`;
+      }
+      if (dataProcessor.fmsData) {
+        statusText += ` • ${dataProcessor.fmsMap.size} zonas con alarmas`;
+      }
+      statusText += ` • Ventana: ${daysWindow} días`;
+      document.getElementById('mergeStatusText').textContent = statusText;
+      
+      applyFilters();
+    }
+    
+    function populateFilters() {
+      const territorios = [...new Set(currentData.ordenes.map(o => o['Territorio de servicio: Nombre']).filter(Boolean))];
+      const terrSelect = document.getElementById('filterTerritorio');
+      terrSelect.innerHTML = '<option value="">Todos</option>' + territorios.sort().map(t => `<option value="${t}">${t}</option>`).join('');
+      
+      const cmtsList = [...new Set(allZones.map(z => z.cmts).filter(Boolean))];
+      const cmtsSelect = document.getElementById('filterCMTS');
+      cmtsSelect.innerHTML = '<option value="">Todos</option>' + cmtsList.sort().map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+    
+    function applyFilters() {
+      if (!currentData) return;
+      
+      Filters.catec = document.getElementById('filterCATEC').checked;
+      Filters.showAllStates = document.getElementById('showAllStates').checked;
+      Filters.ftth = document.getElementById('filterFTTH').checked;
+      Filters.excludeFTTH = document.getElementById('filterExcludeFTTH').checked;
+      Filters.nodoEstado = document.getElementById('filterNodoEstado').value;
+      Filters.cmts = document.getElementById('filterCMTS').value;
+      Filters.days = parseInt(document.getElementById('daysWindow').value);
+      Filters.territorio = document.getElementById('filterTerritorio').value;
+      Filters.sistema = document.getElementById('filterSistema').value;
+      Filters.alarma = document.getElementById('filterAlarma').value;
+      Filters.quickSearch = document.getElementById('quickSearch').value;
+      Filters.ordenarPorIngreso = document.getElementById('ordenarPorIngreso').value;
+      
+      console.log(`✅ Aplicando filtros - Ventana: ${Filters.days} días`);
+      console.log(`📊 Estados activos: ${CONFIG.estadosPermitidos.join(', ')}`);
+      console.log(`🔥 Ordenamiento: ${Filters.ordenarPorIngreso || 'Por score'}`);
+      
+      const filtered = Filters.apply(currentData.ordenes);
+      console.log(`Órdenes después de filtros: ${filtered.length}`);
+      
+      const zones = dataProcessor.processZones(filtered);
+      let analyzed = dataProcessor.analyzeZones(zones, Filters.days);
+      
+      analyzed = Filters.applyToZones(analyzed);
+      
+      const cmtsFiltered = dataProcessor.analyzeCMTS(analyzed);
+      
+      const stats = {
+        total: analyzed.reduce((sum, z) => sum + z.totalOTs, 0),
+        zonas: analyzed.length,
+        criticas: analyzed.filter(z => z.criticidad === 'CRÍTICO').length,
+        ftth: analyzed.filter(z => z.tipo === 'FTTH').length,
+        conAlarmas: analyzed.filter(z => z.tieneAlarma).length,
+        nodosCriticos: analyzed.filter(z => z.nodoEstado === 'critical').length
+      };
+      document.getElementById('statsGrid').innerHTML = UIRenderer.renderStats(stats);
+      
+      window.lastFilteredOrders = filtered;
+      window.currentAnalyzedZones = analyzed;
+      window.currentCMTSData = cmtsFiltered;
+      allZones = analyzed;
+      allCMTS = cmtsFiltered;
+      
+      document.getElementById('btnExportExcel').disabled = analyzed.length===0 && filtered.length===0;
+      document.getElementById('btnExportExcelZonas').disabled = analyzed.length===0;
+      
+      document.getElementById('zonasPanel').innerHTML = UIRenderer.renderZonas(analyzed);
+      document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
+      document.getElementById('edificiosPanel').innerHTML = UIRenderer.renderEdificios(filtered);
+      document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
+    }
+    
+    function clearFilters() {
+      document.getElementById('filterCATEC').checked = false;
+      document.getElementById('showAllStates').checked = false;
+      document.getElementById('filterFTTH').checked = false;
+      document.getElementById('filterExcludeFTTH').checked = false;
+      document.getElementById('filterNodoEstado').value = '';
+      document.getElementById('filterCMTS').value = '';
+      document.getElementById('daysWindow').value = '3';
+      document.getElementById('filterTerritorio').value = '';
+      document.getElementById('filterSistema').value = '';
+      document.getElementById('filterAlarma').value = '';
+      document.getElementById('quickSearch').value = '';
+      document.getElementById('ordenarPorIngreso').value = 'desc';
+      applyFilters();
+    }
+    
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+      
+      document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+      document.getElementById(`${tabName}Panel`).classList.add('active');
+    }
+    
+    function showAlarmaInfo(zoneIdx) {
+      const zonaData = window.currentAnalyzedZones[zoneIdx];
+      if (!zonaData || !zonaData.alarmas.length) return;
+      
+      let html = '<div class="alarma-info-box">';
+      html += `<h4>🚨 Alarmas en Zona: ${zonaData.zona}</h4>`;
+      
+      zonaData.alarmas.forEach((a, idx) => {
+        html += `<div style="margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border-subtle);">`;
+        html += `<h5 style="color: var(--win-blue); margin-bottom: 10px;">Alarma ${idx + 1} ${a.isActive ? '<span class="badge badge-alarma-activa">ACTIVO</span>' : '<span class="badge">CERRADO</span>'}</h5>`;
+        html += `<div class="alarma-info-grid">`;
+        html += `<div class="alarma-info-item"><span class="alarma-info-label">Tipo Alarma</span><span class="alarma-info-value">${a.type}</span></div>`;
+        html += `<div class="alarma-info-item"><span class="alarma-info-label">Elemento</span><span class="alarma-info-value">${FMS_TIPOS[a.elementType] || a.elementType}</span></div>`;
+        html += `<div class="alarma-info-item"><span class="alarma-info-label">Código Elemento</span><span class="alarma-info-value">${a.elementCode}</span></div>`;
+        html += `<div class="alarma-info-item"><span class="alarma-info-label">Fecha Creación</span><span class="alarma-info-value">${a.creationDate}</span></div>`;
+        html += `<div class="alarma-info-item"><span class="alarma-info-label">Fecha Cierre</span><span class="alarma-info-value">${a.recoveryDate || 'ABIERTO'}</span></div>`;
+        html += `<div class="alarma-info-item"><span class="alarma-info-label">Incidente</span><span class="alarma-info-value">${a.damage}</span></div>`;
+        html += `<div class="alarma-info-item"><span class="alarma-info-label">Clasificación</span><span class="alarma-info-value">${a.incidentClassification}</span></div>`;
+        html += `<div class="alarma-info-item"><span class="alarma-info-label">Reclamos</span><span class="alarma-info-value">${a.claims}</span></div>`;
+        html += `<div class="alarma-info-item"><span class="alarma-info-label">CM Count</span><span class="alarma-info-value">${a.cmCount}</span></div>`;
+        html += `</div></div>`;
+      });
+      
+      html += '</div>';
+      
+      document.getElementById('alarmaModalBody').innerHTML = html;
+      document.getElementById('alarmaBackdrop').classList.add('show');
+      document.body.classList.add('modal-open');
+    }
+    
+    function closeAlarmaModal() {
+      document.getElementById('alarmaBackdrop').classList.remove('show');
+      document.body.classList.remove('modal-open');
+    }
+    
+    function showEdificioDetail(idx) {
+      const edificio = window.edificiosData[idx];
+      if (!edificio) return;
+      
+      document.getElementById('edificioModalTitle').textContent = `🏢 Edificio: ${edificio.direccion}`;
+      
+      let html = `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
+        <strong>Zona:</strong> ${edificio.zona}<br>
+        <strong>Territorio:</strong> ${edificio.territorio}<br>
+        <strong>Total OTs:</strong> ${edificio.casos.length}
+      </div>`;
+      
+      html += '<div class="table-container"><div class="table-wrapper"><table class="detail-table"><thead><tr>';
+      html += '<th>Número de Caso</th><th>Estado</th><th>Diagnóstico</th><th>Fecha Creación</th>';
+      html += '</tr></thead><tbody>';
+      
+      edificio.casos.forEach(o => {
+        const numCaso = o['Número del caso'] || o['Caso Externo'] || '';
+        const sistema = TextUtils.detectarSistema(numCaso);
+        let badgeSistema = '';
+        if (sistema === 'OPEN') {
+          badgeSistema = '<span class="badge badge-open">OPEN</span>';
+        } else if (sistema === 'FAN') {
+          badgeSistema = '<span class="badge badge-fan">FAN</span>';
+        }
+        
+        const estado = o['Estado'] || o['Estado.1'] || o['Estado.2'] || '';
+        const diag = o['Diagnostico Tecnico'] || o['Diagnóstico Técnico'] || '-';
+        const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || '';
+        
+        html += `<tr>
+          <td>${numCaso} ${badgeSistema}</td>
+          <td>${estado}</td>
+          <td>${diag.substring(0, 100)}${diag.length > 100 ? '...' : ''}</td>
+          <td>${fecha}</td>
+        </tr>`;
+      });
+      
+      html += '</tbody></table></div></div>';
+      
+      document.getElementById('edificioModalBody').innerHTML = html;
+      document.getElementById('edificioBackdrop').classList.add('show');
+      document.body.classList.add('modal-open');
+    }
+    
+    function closeEdificioModal() {
+      document.getElementById('edificioBackdrop').classList.remove('show');
+      document.body.classList.remove('modal-open');
+    }
+    
+    function openModal(zoneIdx) {
+      const zonaData = window.currentAnalyzedZones[zoneIdx];
+      if (!zonaData) return;
+      
+      currentZone = zonaData;
+      selectedOrders.clear();
+      
+      document.getElementById('modalTitle').textContent = `Detalle: ${currentZone.zona}`;
+      
+      const ordenesParaModal = currentZone.ordenesOriginales || currentZone.ordenes;
+      currentZone.ordenes = ordenesParaModal;
+      
+      const dias = [...new Set(ordenesParaModal.map(o => {
+        const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
+        const dt = DateUtils.parse(fecha);
+        return dt ? DateUtils.format(dt) : null;
+      }).filter(Boolean))].sort();
+      
+      const diaSelect = document.getElementById('filterDia');
+      diaSelect.innerHTML = '<option value="">Todos los días</option>' + dias.map(d => `<option value="${d}">${d}</option>`).join('');
+      
+      renderModalContent();
+      
+      document.getElementById('modalBackdrop').classList.add('show');
+      document.body.classList.add('modal-open');
+    }
+    
+    function openCMTSDetail(cmts) {
+      console.log('=== openCMTSDetail llamado ===');
+      console.log('CMTS solicitado:', cmts);
+      
+      const cmtsDataSource = window.currentCMTSData || allCMTS;
+      
+      if (!cmtsDataSource || !cmtsDataSource.length) {
+        console.error('No hay datos de CMTS disponibles');
+        toast('❌ No hay datos de CMTS disponibles');
+        return;
+      }
+      
+      const cmtsData = cmtsDataSource.find(c => c.cmts === cmts);
+      
+      if (!cmtsData) {
+        console.error('CMTS no encontrado:', cmts);
+        toast('❌ No se encontró el CMTS: ' + cmts);
+        return;
+      }
+      
+      let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+      html += '<th>Zona</th><th>Tipo</th><th>Total OTs</th><th>N</th><th>N-1</th><th>Estado Nodo</th>';
+      html += '</tr></thead><tbody>';
+      
+      cmtsData.zonas.forEach(z => {
+        const badgeTipo = z.tipo === 'FTTH' ? '<span class="badge badge-ftth">FTTH</span>' : '<span class="badge badge-hfc">HFC</span>';
+        
+        let badgeNodo = '<span class="badge">Sin datos</span>';
+        if (z.nodoEstado === 'up') {
+          badgeNodo = `<span class="badge badge-up">✓ UP</span>`;
+        } else if (z.nodoEstado === 'critical') {
+          badgeNodo = `<span class="badge badge-critical">⚠ CRÍTICO</span>`;
+        } else if (z.nodoEstado === 'down') {
+          badgeNodo = `<span class="badge badge-down">↓ DOWN</span>`;
+        }
+        
+        html += `<tr>
+          <td><strong>${z.zona}</strong></td>
+          <td>${badgeTipo}</td>
+          <td class="number">${z.totalOTs}</td>
+          <td class="number">${z.ingresoN}</td>
+          <td class="number">${z.ingresoN1}</td>
+          <td>${badgeNodo}</td>
+        </tr>`;
+      });
+      
+      html += '</tbody></table></div></div>';
+      
+      document.getElementById('modalTitle').textContent = `Zonas del CMTS: ${cmts}`;
+      document.getElementById('modalBody').innerHTML = html;
+      document.getElementById('modalFilters').style.display = 'none';
+      
+      document.getElementById('modalFooter').innerHTML = `
+        <div></div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary" onclick="exportModalDetalleExcel()">📥 Exportar detalle</button>
+          <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+        </div>`;
+      
+      document.getElementById('modalBackdrop').classList.add('show');
+      document.body.classList.add('modal-open');
+    }
+    
+    function closeModal() {
+      document.getElementById('modalBackdrop').classList.remove('show');
+      document.body.classList.remove('modal-open');
+      selectedOrders.clear();
+      document.getElementById('filterHorario').value = '';
+      document.getElementById('filterDia').value = '';
+      
+      document.getElementById('modalFilters').style.display = 'flex';
+      document.getElementById('modalFooter').innerHTML = `
+        <div class="selection-info" id="selectionInfo">0 órdenes seleccionadas</div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-warning" id="btnExportBEFAN" disabled onclick="exportBEFAN()">
+            📤 Exportar BEFAN (TXT)
+          </button>
+          <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+        </div>
+      `;
+    }
+    
+    function applyModalFilters() {
+      renderModalContent();
+    }
+    
+    function renderModalContent() {
+      const horario = document.getElementById('filterHorario').value;
+      const dia = document.getElementById('filterDia').value;
+      
+      let ordenes = currentZone.ordenes.slice();
+      
+      if (horario) {
+        const [start, end] = horario.split('-').map(Number);
+        ordenes = ordenes.filter(o => {
+          const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
+          const dt = DateUtils.parse(fecha);
+          if (!dt) return false;
+          const hour = DateUtils.getHour(dt);
+          return hour >= start && hour < end;
+        });
+      }
+      
+      if (dia) {
+        ordenes = ordenes.filter(o => {
+          const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
+          const dt = DateUtils.parse(fecha);
+          return dt && DateUtils.format(dt) === dia;
+        });
+      }
+      
+      let html = '<div class="chart-container">';
+      html += '<div class="chart-title">📊 Distribución de Ingresos (7 días)</div>';
+      html += '<div style="display: flex; justify-content: space-around; align-items: flex-end; height: 150px; padding: 10px;">';
+      
+      currentZone.last7DaysCounts.forEach((count, i) => {
+        const height = currentZone.last7DaysCounts.length > 0 ? (count / Math.max(...currentZone.last7DaysCounts, 1)) * 120 : 0;
+        html += `<div style="text-align: center;">
+          <div style="width: 60px; height: ${height}px; background: linear-gradient(180deg, #0078D4 0%, #005A9E 100%); border-radius: 4px 4px 0 0; margin: 0 auto;"></div>
+          <div style="font-size: 0.75rem; font-weight: 700; margin-top: 4px;">${count}</div>
+          <div style="font-size: 0.6875rem; color: var(--text-secondary);">${currentZone.last7Days[i]}</div>
+        </div>`;
+      });
+      
+      html += '</div></div>';
+      
+      html += `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
+        <strong>Total órdenes mostradas:</strong> ${ordenes.length} de ${currentZone.ordenes.length}
+      </div>`;
+      
+      html += '<div class="table-container"><div style="max-height: 400px; overflow-y: auto;"><table class="detail-table"><thead><tr>';
+      html += '<th style="position: sticky; top: 0; z-index: 10;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>';
+      
+      const allCols = new Set();
+      ordenes.forEach(o => {
+        Object.keys(o).forEach(k => {
+          if (!k.startsWith('_')) allCols.add(k);
+        });
+      });
+      
+      const columns = Array.from(allCols);
+      columns.forEach(col => {
+        html += `<th style="position: sticky; top: 0; z-index: 10; white-space: nowrap;">${col}</th>`;
+      });
+      
+      html += '</tr></thead><tbody>';
+      
+      ordenes.forEach((o, idx) => {
+        const cita = o['Número de cita'] || `row_${idx}`;
+        const checked = selectedOrders.has(cita) ? 'checked' : '';
+        html += `<tr>`;
+        html += `<td><input type="checkbox" class="order-checkbox" data-cita="${cita}" ${checked} onchange="updateSelection()"></td>`;
+        
+        columns.forEach(col => {
+          let value = o[col] || '';
+          
+          if (col.includes('Número del caso') || col.includes('Caso')) {
+            const sistema = TextUtils.detectarSistema(value);
+            if (sistema) {
+              const badgeClass = sistema === 'OPEN' ? 'badge-open' : 'badge-fan';
+              value = `${value} <span class="badge ${badgeClass}">${sistema}</span>`;
+            }
+          }
+          
+          if (typeof value === 'string' && value.length > 100) {
+            value = value.substring(0, 100) + '...';
+          }
+          
+          html += `<td title="${value}">${value}</td>`;
+        });
+        
+        html += '</tr>';
+      });
+      
+      html += '</tbody></table></div></div>';
+      
+      document.getElementById('modalBody').innerHTML = html;
+      updateSelectionInfo();
+    }
+    
+    function toggleSelectAll() {
+      const checked = document.getElementById('selectAllOrders')?.checked || 
+                     document.getElementById('selectAllCheckbox')?.checked || false;
+      
+      document.querySelectorAll('.order-checkbox').forEach(cb => {
+        cb.checked = checked;
+        const cita = cb.getAttribute('data-cita');
+        if (checked) {
+          selectedOrders.add(cita);
+        } else {
+          selectedOrders.delete(cita);
+        }
+      });
+      
+      updateSelectionInfo();
+    }
+    
+    function updateSelection() {
+      selectedOrders.clear();
+      document.querySelectorAll('.order-checkbox:checked').forEach(cb => {
+        selectedOrders.add(cb.getAttribute('data-cita'));
+      });
+      updateSelectionInfo();
+    }
+    
+    function updateSelectionInfo() {
+      const count = selectedOrders.size;
+      const infoEl = document.getElementById('selectionInfo');
+      if (infoEl) {
+        infoEl.textContent = `${count} órdenes seleccionadas`;
+      }
+      const btnEl = document.getElementById('btnExportBEFAN');
+      if (btnEl) {
+        btnEl.disabled = count === 0;
+      }
+    }
+    
+    function exportBEFAN() {
+      if (selectedOrders.size === 0) {
+        toast('No hay órdenes seleccionadas');
+        return;
+      }
+      
+      const ordenes = currentZone.ordenes.filter(o => {
+        const cita = o['Número de cita'];
+        return selectedOrders.has(cita);
+      });
+      
+      let txt = '';
+      let contadorExitoso = 0;
+      
+      ordenes.forEach(o => {
+        const casoExterno = o['Caso Externo'] || 
+                           o['External Case Id'] || 
+                           o['Número del caso'] ||
+                           o['Caso externo'] ||
+                           o['CASO EXTERNO'] ||
+                           o['external_case_id'] || '';
+        
+        if (casoExterno && String(casoExterno).trim() !== '') {
+          txt += `${String(casoExterno).trim()}|${CONFIG.codigo_befan}\n`;
+          contadorExitoso++;
+        }
+      });
+      
+      if (!txt || contadorExitoso === 0) {
+        toast('⚠️ Las órdenes seleccionadas no tienen Caso Externo válido');
+        return;
+      }
+      
+      try {
+        const blob = new Blob([txt], {type: 'text/plain;charset=utf-8'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `BEFAN_${currentZone.zona}_${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast(`✅ Exportadas ${contadorExitoso} órdenes a BEFAN`);
+      } catch (error) {
+        console.error('Error al descargar BEFAN:', error);
+        toast('❌ Error al descargar archivo BEFAN');
+      }
+    }
+    
+    function exportExcelVista(){
+      const wb = XLSX.utils.book_new();
+
+      if (Array.isArray(window.currentAnalyzedZones) && window.currentAnalyzedZones.length){
+        const zonasData = window.currentAnalyzedZones.map(z => ({
+          Zona: z.zona,
+          Tipo: z.tipo,
+          Red: z.tipo === 'FTTH' ? z.zonaHFC : '',
+          CMTS: z.cmts,
+          Tiene_Alarma: z.tieneAlarma ? 'SÍ' : 'NO',
+          Alarmas_Activas: z.alarmasActivas,
+          Total_OTs: z.totalOTs,
+          Ingreso_N: z.ingresoN,
+          Ingreso_N1: z.ingresoN1,
+          Max_Dia: z.maxDia
+        }));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zonasData), 'Zonas');
+      }
+
+      if (Array.isArray(window.currentCMTSData) && window.currentCMTSData.length){
+        const cmtsData = window.currentCMTSData.map(c => ({
+          CMTS: c.cmts,
+          Zonas: c.zonas.length,
+          Total_OTs: c.totalOTs,
+          Zonas_UP: c.zonasUp,
+          Zonas_DOWN: c.zonasDown,
+          Zonas_Criticas: c.zonasCriticas
+        }));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cmtsData), 'CMTS');
+      }
+
+      if (window.edificiosData && window.edificiosData.length){
+        const edi = window.edificiosData.map(e => ({
+          Direccion: e.direccion,
+          Zona: e.zona,
+          Territorio: e.territorio,
+          Total_OTs: e.casos.length
+        }));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(edi), 'Edificios');
+      }
+
+      if (window.equiposPorZona && window.equiposPorZona.size){
+        const todos = [];
+        window.equiposPorZona.forEach((arr, zona)=>{
+          arr.forEach(it=>todos.push({...it, zona}));
+        });
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(todos), 'Equipos');
+      }
+
+      const fecha = new Date().toISOString().slice(0,10);
+      XLSX.writeFile(wb, `Vista_Filtrada_${fecha}.xlsx`);
+      toast('✓ Vista filtrada exportada');
+    }
+
+    function exportExcelZonasCrudo(){
+      if (!Array.isArray(window.currentAnalyzedZones) || !window.currentAnalyzedZones.length) {
+        return toast('No hay zonas para exportar');
+      }
+      const wb = XLSX.utils.book_new();
+      const zonasData = window.currentAnalyzedZones.map(z => ({
+        Zona: z.zona,
+        Tipo: z.tipo,
+        Red: z.tipo === 'FTTH' ? z.zonaHFC : '',
+        CMTS: z.cmts,
+        Nodo_Estado: z.nodoEstado,
+        Nodo_UP: z.nodoUp,
+        Nodo_DOWN: z.nodoDown,
+        Tiene_Alarma: z.tieneAlarma ? 'SÍ' : 'NO',
+        Alarmas_Activas: z.alarmasActivas,
+        Territorio: z.territorio,
+        Total_OTs: z.totalOTs,
+        Ingreso_N: z.ingresoN,
+        Ingreso_N1: z.ingresoN1,
+        Max_Dia: z.maxDia
+      }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zonasData), 'Zonas');
+      const fecha = new Date().toISOString().slice(0,10);
+      XLSX.writeFile(wb, `Zonas_Crudo_${fecha}.xlsx`);
+    }
+
+    function exportModalDetalleExcel(){
+      const title = document.getElementById('modalTitle').textContent || '';
+      const wb = XLSX.utils.book_new();
+
+      if (title.startsWith('Detalle: ') && window.currentZone){
+        const ordenes = window.currentZone.ordenes || [];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordenes), `Zona_${window.currentZone.zona||'NA'}`);
+      } else if (title.startsWith('Zonas del CMTS: ')){
+        const cmts = title.replace('Zonas del CMTS: ','').trim();
+        const data = (window.currentCMTSData||[]).find(c=>c.cmts===cmts);
+        if (!data) return toast('Sin datos de CMTS');
+        const zonasFlat = data.zonas.map(z=>({
+          Zona: z.zona, Tipo: z.tipo, Total_OTs: z.totalOTs, Ingreso_N: z.ingresoN, Ingreso_N1: z.ingresoN1, Estado_Nodo: z.nodoEstado
+        }));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zonasFlat), `CMTS_${cmts.slice(0,20)}`);
+      } else {
+        const edTitle = document.getElementById('edificioModalTitle')?.textContent||'';
+        if (edTitle.startsWith('🏢 Edificio: ') && window.edificiosData){
+          const dir = edTitle.replace('🏢 Edificio: ','').trim();
+          const e = window.edificiosData.find(x=>x.direccion===dir);
+          if (!e) return toast('Sin datos del edificio');
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(e.casos), 'Edificio_OTs');
+        } else {
+          return toast('No hay detalle para exportar');
+        }
+      }
+
+      const fecha = new Date().toISOString().slice(0,10);
+      XLSX.writeFile(wb, `Detalle_${fecha}.xlsx`);
+    }
+    
+    function debounce(func, wait) {
+      let timeout;
+      return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+      };
+    }
+    
+    console.log('✅ Panel v4.9 MEJORADO inicializado');
+    console.log('🔥 NUEVAS FUNCIONALIDADES:');
+    console.log('   • Ordenamiento de zonas por ingreso (mayor/menor)');
+    console.log('   • Filtros de equipos por modelo y marca');
+    console.log('   • Exportación filtrada de equipos');
+    console.log('📊 Estados activos:', CONFIG.estadosPermitidos);
+  </script>
+</body>
+</html>
