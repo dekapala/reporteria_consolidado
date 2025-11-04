@@ -155,6 +155,60 @@ let baseZoneGroups = [];
 let equipmentCache = new Map();
 window.equipmentCache = equipmentCache;
 
+function ensureOrderRowKey(order, index = 0, zona = '') {
+  if (!order) return '';
+  if (order.__rowKey) return order.__rowKey;
+
+  const candidateFields = [
+    'Número de cita',
+    'Número del caso',
+    'Caso Externo',
+    'Caso externo',
+    'External Case Id',
+    'CASO EXTERNO',
+    'external_case_id'
+  ];
+
+  for (const field of candidateFields) {
+    const value = order[field];
+    if (value !== undefined && value !== null) {
+      const trimmed = String(value).trim();
+      if (trimmed) {
+        order.__rowKey = trimmed;
+        return order.__rowKey;
+      }
+    }
+  }
+
+  const zonaSegment = zona ? String(zona).replace(/[^A-Za-z0-9]/g, '').slice(0, 10) : 'zona';
+  order.__rowKey = `row_${zonaSegment}_${Date.now()}_${index}`;
+  return order.__rowKey;
+}
+
+function setZoneModalFooter() {
+  const footer = document.getElementById('modalFooter');
+  if (!footer) return;
+
+  const disabledAttr = selectedOrders.size > 0 ? '' : 'disabled';
+  footer.innerHTML = `
+    <div class="selection-info" id="selectionInfo">${selectedOrders.size} órdenes seleccionadas</div>
+    <div class="modal-footer-actions">
+      <button class="btn btn-primary" onclick="exportModalDetalleExcel()">
+        📄 Exportar detalle
+      </button>
+      <button class="btn btn-primary" onclick="exportZoneOrdersExcel()">
+        📥 Exportar Excel (Zona)
+      </button>
+      <button class="btn btn-warning" id="btnExportBEFAN" ${disabledAttr} onclick="exportBEFAN()">
+        📤 Exportar BEFAN (TXT)
+      </button>
+      <button class="btn btn-secondary" onclick="closeModal()">
+        Cerrar
+      </button>
+    </div>
+  `;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
 });
@@ -491,10 +545,18 @@ function openModal(zoneIdx) {
   currentZone = zonaData;
   selectedOrders.clear();
 
+  setZoneModalFooter();
+
   document.getElementById('modalTitle').textContent = `Detalle: ${currentZone.zona}`;
 
   const ordenesParaModal = currentZone.ordenesOriginales || currentZone.ordenes;
   currentZone.ordenes = ordenesParaModal;
+  currentZone.ordenes.forEach((order, idx) => ensureOrderRowKey(order, idx, currentZone.zona));
+
+  const modalFilters = document.getElementById('modalFilters');
+  if (modalFilters) {
+    modalFilters.style.display = 'flex';
+  }
 
   const dias = [...new Set(ordenesParaModal.map(o => {
     const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
@@ -581,6 +643,12 @@ function closeModal() {
   document.getElementById('filterHorario').value = '';
   document.getElementById('filterDia').value = '';
 
+  const modalFilters = document.getElementById('modalFilters');
+  if (modalFilters) {
+    modalFilters.style.display = 'flex';
+  }
+  setZoneModalFooter();
+  updateSelectionInfo();
   document.getElementById('modalFilters').style.display = 'flex';
   document.getElementById('modalFooter').innerHTML = `
     <div class="selection-info" id="selectionInfo">0 órdenes seleccionadas</div>
@@ -672,10 +740,11 @@ function renderModalContent() {
   html += '</tr></thead><tbody>';
 
   ordenes.forEach((o, idx) => {
-    const cita = o['Número de cita'] || `row_${idx}`;
-    const checked = selectedOrders.has(cita) ? 'checked' : '';
+    const rowKey = ensureOrderRowKey(o, idx, currentZone?.zona);
+    const checked = selectedOrders.has(rowKey) ? 'checked' : '';
+    const safeRowKey = String(rowKey).replace(/"/g, '&quot;');
     html += `<tr>`;
-    html += `<td><input type="checkbox" class="order-checkbox" data-cita="${cita}" ${checked} onchange="updateSelection()"></td>`;
+    html += `<td><input type="checkbox" class="order-checkbox" data-cita="${safeRowKey}" ${checked} onchange="updateSelection()"></td>`;
 
     columns.forEach(col => {
       let value = o[col] || '';
@@ -747,10 +816,7 @@ function exportBEFAN() {
     return;
   }
 
-  const ordenes = currentZone.ordenes.filter(o => {
-    const cita = o['Número de cita'];
-    return selectedOrders.has(cita);
-  });
+  const ordenes = currentZone.ordenes.filter((o, idx) => selectedOrders.has(ensureOrderRowKey(o, idx, currentZone?.zona)));
 
   let txt = '';
   let contadorExitoso = 0;
@@ -790,6 +856,57 @@ function exportBEFAN() {
     console.error('Error al descargar BEFAN:', error);
     toast('❌ Error al descargar archivo BEFAN');
   }
+}
+
+function exportZoneOrdersExcel() {
+  if (!currentZone || !Array.isArray(currentZone.ordenes) || !currentZone.ordenes.length) {
+    toast('❌ No hay una zona activa para exportar');
+    return;
+  }
+
+  const horario = document.getElementById('filterHorario')?.value || '';
+  const dia = document.getElementById('filterDia')?.value || '';
+
+  let ordenes = getFilteredModalOrders(horario, dia);
+
+  if (!ordenes.length) {
+    toast('⚠️ No hay órdenes para exportar con los filtros aplicados');
+    return;
+  }
+
+  if (selectedOrders.size > 0) {
+    ordenes = ordenes.filter((o, idx) => selectedOrders.has(ensureOrderRowKey(o, idx, currentZone?.zona)));
+    if (!ordenes.length) {
+      toast('⚠️ La selección actual no tiene órdenes disponibles para exportar');
+      return;
+    }
+  }
+
+  const sanitized = ordenes.map(order => {
+    const clean = {};
+    Object.keys(order).forEach(key => {
+      if (!key.startsWith('_')) {
+        clean[key] = order[key];
+      }
+    });
+    return clean;
+  });
+
+  if (!sanitized.length) {
+    toast('⚠️ No hay datos exportables para la zona seleccionada');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const rawSheetName = currentZone.zona || 'Zona';
+  const sheetName = rawSheetName.toString().slice(0, 28) || 'Zona';
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitized), sheetName);
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  const fileSafeZone = sheetName.replace(/[^A-Za-z0-9_-]/g, '_') || 'Zona';
+  XLSX.writeFile(wb, `Zona_${fileSafeZone}_${fecha}.xlsx`);
+
+  toast(`✅ Exportadas ${sanitized.length} órdenes de ${rawSheetName}`);
 }
 
 function exportExcelVista(){
@@ -874,14 +991,15 @@ function exportExcelZonasCrudo(){
 
 function exportModalDetalleExcel(){
   const title = document.getElementById('modalTitle').textContent || '';
-  const wb = XLSX.utils.book_new();
 
   if (title.startsWith('Detalle: ') && window.currentZone){
-    const horario = document.getElementById('filterHorario').value;
-    const dia = document.getElementById('filterDia').value;
-    const ordenes = getFilteredModalOrders(horario, dia);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordenes), `Zona_${window.currentZone.zona||'NA'}`);
-  } else if (title.startsWith('Zonas del CMTS: ')){
+    exportZoneOrdersExcel();
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  if (title.startsWith('Zonas del CMTS: ')){
     const cmts = title.replace('Zonas del CMTS: ','').trim();
     const data = (window.currentCMTSData||[]).find(c=>c.cmts===cmts);
     if (!data) return toast('Sin datos de CMTS');
@@ -930,6 +1048,7 @@ window.closeModal = closeModal;
 window.applyModalFilters = applyModalFilters;
 window.toggleSelectAll = toggleSelectAll;
 window.exportBEFAN = exportBEFAN;
+window.exportZoneOrdersExcel = exportZoneOrdersExcel;
 window.exportExcelVista = exportExcelVista;
 window.exportExcelZonasCrudo = exportExcelZonasCrudo;
 window.exportModalDetalleExcel = exportModalDetalleExcel;
