@@ -649,6 +649,19 @@ function closeModal() {
   }
   setZoneModalFooter();
   updateSelectionInfo();
+  document.getElementById('modalFilters').style.display = 'flex';
+  document.getElementById('modalFooter').innerHTML = `
+    <div class="selection-info" id="selectionInfo">0 órdenes seleccionadas</div>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-primary" onclick="exportModalDetalleExcel()">
+        📥 Exportar detalle
+      </button>
+      <button class="btn btn-warning" id="btnExportBEFAN" disabled onclick="exportBEFAN()">
+        📤 Exportar BEFAN (TXT)
+      </button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+    </div>
+  `;
 }
 
 function applyModalFilters() {
