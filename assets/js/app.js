@@ -585,6 +585,9 @@ function closeModal() {
   document.getElementById('modalFooter').innerHTML = `
     <div class="selection-info" id="selectionInfo">0 órdenes seleccionadas</div>
     <div style="display: flex; gap: 8px;">
+      <button class="btn btn-primary" onclick="exportModalDetalleExcel()">
+        📥 Exportar detalle
+      </button>
       <button class="btn btn-warning" id="btnExportBEFAN" disabled onclick="exportBEFAN()">
         📤 Exportar BEFAN (TXT)
       </button>
@@ -597,9 +600,10 @@ function applyModalFilters() {
   renderModalContent();
 }
 
-function renderModalContent() {
-  const horario = document.getElementById('filterHorario').value;
-  const dia = document.getElementById('filterDia').value;
+function getFilteredModalOrders(horario, dia) {
+  if (!currentZone || !Array.isArray(currentZone.ordenes)) {
+    return [];
+  }
 
   let ordenes = currentZone.ordenes.slice();
 
@@ -621,6 +625,15 @@ function renderModalContent() {
       return dt && DateUtils.format(dt) === dia;
     });
   }
+
+  return ordenes;
+}
+
+function renderModalContent() {
+  const horario = document.getElementById('filterHorario').value;
+  const dia = document.getElementById('filterDia').value;
+
+  const ordenes = getFilteredModalOrders(horario, dia);
 
   let html = '<div class="chart-container">';
   html += '<div class="chart-title">📊 Distribución de Ingresos (7 días)</div>';
@@ -864,7 +877,9 @@ function exportModalDetalleExcel(){
   const wb = XLSX.utils.book_new();
 
   if (title.startsWith('Detalle: ') && window.currentZone){
-    const ordenes = window.currentZone.ordenes || [];
+    const horario = document.getElementById('filterHorario').value;
+    const dia = document.getElementById('filterDia').value;
+    const ordenes = getFilteredModalOrders(horario, dia);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordenes), `Zona_${window.currentZone.zona||'NA'}`);
   } else if (title.startsWith('Zonas del CMTS: ')){
     const cmts = title.replace('Zonas del CMTS: ','').trim();
