@@ -193,6 +193,9 @@ function setZoneModalFooter() {
   footer.innerHTML = `
     <div class="selection-info" id="selectionInfo">${selectedOrders.size} órdenes seleccionadas</div>
     <div class="modal-footer-actions">
+      <button class="btn btn-primary" onclick="exportModalDetalleExcel()">
+        📄 Exportar detalle
+      </button>
       <button class="btn btn-primary" onclick="exportZoneOrdersExcel()">
         📥 Exportar Excel (Zona)
       </button>
