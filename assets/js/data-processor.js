@@ -263,19 +263,28 @@ class DataProcessor {
       meta.dayKey = fecha ? DateUtils.toDayKey(fecha) : null;
       meta.daysFromToday = fecha ? DateUtils.daysBetween(today, fecha) : Number.POSITIVE_INFINITY;
 
+      // ============================================
+      // VALIDACIÓN DE DOBLE ESTADO (CORREGIDA)
+      // ============================================
+      
+      // Leer ambos estados por separado
       const estado1Raw = (row['Estado.1'] ?? row['Estado'] ?? '').toString().toUpperCase().trim();
       const estado2Raw = (row['Estado.2'] ?? row['Estado final'] ?? '').toString().toUpperCase().trim();
 
       meta.estado1 = estado1Raw;
       meta.estado2 = estado2Raw;
-      meta.estado = estado1Raw || estado2Raw;
+      
+      // Para mostrar en la UI (usamos Estado.2 como principal)
+      meta.estado = estado2Raw || estado1Raw;
 
+      // Validar ambos estados (AND lógico)
       const estado1Valido = CONFIG.estadosPermitidosEstado1.includes(estado1Raw);
       const estado2Valido = CONFIG.estadosPermitidosEstado2.includes(estado2Raw);
       meta.estadoValido = estado1Valido && estado2Valido;
-      const estadoRaw = (row['Estado.1'] || row['Estado'] || row['Estado.2'] || '').toString().toUpperCase().trim();
-      meta.estado = estadoRaw;
-      meta.estadoValido = estadoRaw && (!CONFIG.estadosOcultosPorDefecto.includes(estadoRaw));
+      
+      // ============================================
+      // FIN DE VALIDACIÓN DE DOBLE ESTADO
+      // ============================================
 
       const {zonaPrincipal, tipo} = this.getZonaPrincipal(row);
       meta.zonaPrincipal = zonaPrincipal;
