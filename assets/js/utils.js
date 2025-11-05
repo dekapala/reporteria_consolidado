@@ -18,6 +18,13 @@ console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por in
       'NUEVA',
       'PENDIENTE DE ACCION',
       'PROGRAMADA'
+    estadosPermitidos: [
+      'NUEVA',
+      'EN PROGRESO',
+      'PENDIENTE DE ACCION',
+      'PROGRAMADA',
+      'PENDIENTE DE CONTACTO',
+      'EN ESPERA DE EJECUCION'
     ],
     estadosOcultosPorDefecto: ['CANCELADA','CERRADA']
   };
@@ -41,10 +48,6 @@ console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por in
 
   function stripAccents(s=''){
     return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  }
-
-  function normalizeState(value){
-    return stripAccents(String(value || '').toUpperCase().trim());
   }
 
   function findDispositivosColumn(rowObj){
@@ -180,21 +183,14 @@ console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por in
   }
 
   function openPlanillasNewTab() {
-    const menu = document.getElementById('utilitiesMenu');
-    if (menu) {
-      menu.classList.remove('show');
-    }
+    document.getElementById('utilitiesMenu').classList.remove('show');
     window.open('planillas.html', '_blank');
     toast('📋 Abriendo herramientas de Planillas...');
   }
 
-  CONFIG.estadosPermitidosEstado1Normalized = new Set(CONFIG.estadosPermitidosEstado1.map(normalizeState));
-  CONFIG.estadosPermitidosEstado2Normalized = new Set(CONFIG.estadosPermitidosEstado2.map(normalizeState));
-
   window.CONFIG = CONFIG;
   window.FMS_TIPOS = FMS_TIPOS;
   window.stripAccents = stripAccents;
-  window.normalizeState = normalizeState;
   window.findDispositivosColumn = findDispositivosColumn;
   window.DateUtils = DateUtils;
   window.NumberUtils = NumberUtils;

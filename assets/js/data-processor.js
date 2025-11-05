@@ -263,25 +263,19 @@ class DataProcessor {
       meta.dayKey = fecha ? DateUtils.toDayKey(fecha) : null;
       meta.daysFromToday = fecha ? DateUtils.daysBetween(today, fecha) : Number.POSITIVE_INFINITY;
 
-      const estado1Raw = row['Estado.1'] ?? row['Estado'] ?? '';
-      const estado2Raw = row['Estado.2'] ?? row['Estado final'] ?? '';
+      const estado1Raw = (row['Estado.1'] ?? row['Estado'] ?? '').toString().toUpperCase().trim();
+      const estado2Raw = (row['Estado.2'] ?? row['Estado final'] ?? '').toString().toUpperCase().trim();
 
-      const estado1 = String(estado1Raw).toUpperCase().trim();
-      const estado2 = String(estado2Raw).toUpperCase().trim();
-      const estado1Normalizado = normalizeState(estado1);
-      const estado2Normalizado = normalizeState(estado2);
+      meta.estado1 = estado1Raw;
+      meta.estado2 = estado2Raw;
+      meta.estado = estado1Raw || estado2Raw;
 
-      meta.estado1 = estado1;
-      meta.estado2 = estado2;
-      meta.estado1Normalizado = estado1Normalizado;
-      meta.estado2Normalizado = estado2Normalizado;
-      meta.estado = estado1 || estado2;
-
-      const estado1Valido = CONFIG.estadosPermitidosEstado1Normalized.has(estado1Normalizado);
-      const estado2Valido = estado2Normalizado === ''
-        ? true
-        : CONFIG.estadosPermitidosEstado2Normalized.has(estado2Normalizado);
+      const estado1Valido = CONFIG.estadosPermitidosEstado1.includes(estado1Raw);
+      const estado2Valido = CONFIG.estadosPermitidosEstado2.includes(estado2Raw);
       meta.estadoValido = estado1Valido && estado2Valido;
+      const estadoRaw = (row['Estado.1'] || row['Estado'] || row['Estado.2'] || '').toString().toUpperCase().trim();
+      meta.estado = estadoRaw;
+      meta.estadoValido = estadoRaw && (!CONFIG.estadosOcultosPorDefecto.includes(estadoRaw));
 
       const {zonaPrincipal, tipo} = this.getZonaPrincipal(row);
       meta.zonaPrincipal = zonaPrincipal;
