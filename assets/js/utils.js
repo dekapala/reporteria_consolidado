@@ -194,4 +194,8 @@ console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por in
   window.toast = toast;
   window.debounce = debounce;
   window.openPlanillasNewTab = openPlanillasNewTab;
+
+  console.log('✅ utils.js cargado correctamente');
+  console.log('📊 Estados Estado.1:', CONFIG.estadosPermitidosEstado1);
+  console.log('📊 Estados Estado.2:', CONFIG.estadosPermitidosEstado2);
 })();
