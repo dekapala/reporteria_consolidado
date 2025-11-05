@@ -1,587 +1,20 @@
-console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por ingresos');
-
-const CONFIG = { 
-  defaultDays: 3, 
-  codigo_befan: 'FR461',
-  estadosPermitidos: [
-    'NUEVA',
-    'EN PROGRESO',
-    'PENDIENTE DE ACCION',
-    'PROGRAMADA',
-    'PENDIENTE DE CONTACTO',
-    'EN ESPERA DE EJECUCION'
-  ],
-  estadosOcultosPorDefecto: ['CANCELADA','CERRADA']
-};
-
-const FMS_TIPOS = {
-  'ED': 'Edificio',
-  'CDO': 'CDO',
-  'PNO': 'Puerto Nodo Óptico',
-  'FA': 'Fuente Alimentación',
-  'NO': 'Nodo Óptico',
-  'LE': 'Line Extender',
-  'MB': 'Mini Bridge',
-  'SR_HUB': 'Sitio Red Hub',
-  'CMTS': 'CMTS',
-  'SITIO_MOVIL': 'Sitio Móvil',
-  'TR': 'Troncal',
-  'EDF': 'Edificio FTTH',
-  'CE': 'Caja Empalme',
-  'NAP': 'NAP'
-};
-
-function stripAccents(s=''){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
-
-function findDispositivosColumn(rowObj){
-  const keys = Object.keys(rowObj||{});
-  for (const k of keys){
-    const nk = stripAccents(k.toLowerCase());
-    if (nk.includes('informacion') && nk.includes('dispositivo')) return k;
-  }
-  return rowObj['Informacion Dispositivos'] ? 'Informacion Dispositivos'
-       : rowObj['Información Dispositivos'] ? 'Información Dispositivos'
-       : null;
-}
-
-const DateUtils = {
-  parse(str) {
-    if (!str) return null;
-    const match = String(str).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-    if (match) return new Date(match[3], match[2] - 1, match[1]);
-    return new Date(str);
-  },
-  format(date) {
-    if (!date) return '';
-    const d = String(date.getDate()).padStart(2,'0');
-    const m = String(date.getMonth()+1).padStart(2,'0');
-    return `${d}/${m}/${date.getFullYear()}`;
-  },
-  formatWithTime(date) {
-    if (!date) return '';
-    const d = String(date.getDate()).padStart(2,'0');
-    const m = String(date.getMonth()+1).padStart(2,'0');
-    const h = String(date.getHours()).padStart(2,'0');
-    const min = String(date.getMinutes()).padStart(2,'0');
-    return `${d}/${m}/${date.getFullYear()} ${h}:${min}`;
-  },
-  toDayKey(date) {
-    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    return d.getTime();
-  },
-  getHour(date) {
-    return date.getHours();
-  },
-  daysBetween(date1, date2) {
-    const oneDay = 24 * 60 * 60 * 1000;
-    return Math.round(Math.abs((date1 - date2) / oneDay));
-  }
-};
-
-const NumberUtils = {
-  format(num, dec=0) {
-    if (typeof num !== 'number') return '0';
-    return num.toFixed(dec).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  }
-};
-
-const TextUtils = {
-  normalize(text) {
-    return String(text||'')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g,'')
-      .trim();
-  },
-  matches(text, query) {
-    return this.normalize(text).includes(this.normalize(query));
-  },
-  matchesMultiple(text, queries) {
-    const normalized = this.normalize(text);
-    return queries.some(q => normalized.includes(this.normalize(q)));
-  },
-  parseDispositivosJSON(jsonStr) {
-    try {
-      if (!jsonStr) return [];
-      try {
-        const parsed = JSON.parse(jsonStr);
-        const arr = parsed?.openResp || parsed?.open_response || parsed?.data || [];
-        if (Array.isArray(arr)) {
-          return arr.map(d => ({
-            category: d.category || '',
-            description: d.description || '',
-            model: d.model || '',
-            serialNumber: d.serialNumber || d.serial || '',
-            macAddress: d.macAddress || d.mac || '',
-            type: d.type || ''
-          }));
-        }
-      } catch { /* sigue con regex */ }
-      const get = (f) => {
-        const re = new RegExp(`"${f}"\\s*:\\s*"([^"]*)"`, 'i');
-        const m = String(jsonStr).match(re);
-        return m ? m[1] : '';
-      };
-      if (/macAddress|serialNumber|model|category|description/i.test(jsonStr)){
-        return [{
-          category: get('category'),
-          description: get('description'),
-          model: get('model'),
-          serialNumber: get('serialNumber'),
-          macAddress: get('macAddress'),
-          type: get('type')
-        }];
-      }
-    } catch {}
-    return [];
-  },
-  detectarSistema(numCaso) {
-    const numStr = String(numCaso || '').trim();
-    if (numStr.startsWith('8')) return 'OPEN';
-    if (numStr.startsWith('3')) return 'FAN';
-    return '';
-  }
-};
-
-function toast(msg) {
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 4000);
-}
-
 function toggleUtilities() {
   const menu = document.getElementById('utilitiesMenu');
+  if (!menu) {
+    console.warn('No se encontró el menú de utilidades para alternar');
+    return;
+  }
   menu.classList.toggle('show');
 }
 
 document.addEventListener('click', (e) => {
   const dropdown = document.querySelector('.utilities-dropdown');
   const menu = document.getElementById('utilitiesMenu');
+  if (!menu) return;
   if (dropdown && !dropdown.contains(e.target)) {
     menu.classList.remove('show');
   }
 });
-
-function openPlanillasNewTab() {
-  document.getElementById('utilitiesMenu').classList.remove('show');
-  window.open('about:blank', '_blank');
-  toast('📋 Abre la funcionalidad de Planillas en otra pestaña');
-}
-
-class DataProcessor {
-  constructor() {
-    this.consolidado1 = null;
-    this.consolidado2 = null;
-    this.nodosData = null;
-    this.fmsData = null;
-    this.nodosMap = new Map();
-    this.fmsMap = new Map();
-    this.allColumns = new Set();
-  }
-
-  async loadExcel(file, tipo) {
-    try {
-      const data = new Uint8Array(await file.arrayBuffer());
-
-      const wb = XLSX.read(data, {
-        type: 'array',
-        cellDates: false,
-        cellText: false,
-        cellFormula: false,
-        raw: false
-      });
-
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const range = XLSX.utils.decode_range(ws['!ref']);
-
-      let headerRow = 0;
-      for (let R = 0; R <= 20; R++) {
-        let hasContent = false;
-        for (let C = 0; C <= 15; C++) {
-          const cellAddr = XLSX.utils.encode_cell({r: R, c: C});
-          const cell = ws[cellAddr];
-          if (cell && cell.v) {
-            const cellValue = String(cell.v).toLowerCase();
-            if (cellValue.includes('zona') && cellValue.includes('tecnica')) {
-              headerRow = R;
-              console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
-              hasContent = true;
-              break;
-            }
-            if (cellValue.includes('numero') && (cellValue.includes('caso') || cellValue.includes('cuenta'))) {
-              headerRow = R;
-              console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
-              hasContent = true;
-              break;
-            }
-          }
-        }
-        if (hasContent) break;
-      }
-
-      console.log(`📋 Usando fila ${headerRow + 1} como headers`);
-
-      range.s.r = headerRow;
-      ws['!ref'] = XLSX.utils.encode_range(range);
-
-      const jsonData = XLSX.utils.sheet_to_json(ws, { 
-        defval: '', 
-        raw: false, 
-        dateNF: 'dd/mm/yyyy' 
-      });
-
-      console.log(`✅ Archivo tipo ${tipo}: ${jsonData.length} registros`);
-      console.log(`📋 Primeras 10 columnas:`, jsonData.length > 0 ? Object.keys(jsonData[0]).slice(0, 10) : []);
-
-      if (jsonData.length > 0) {
-        const zonaCols = Object.keys(jsonData[0]).filter(k => k.toLowerCase().includes('zona'));
-        if (zonaCols.length > 0) {
-          console.log(`✅ Columnas de ZONA encontradas:`, zonaCols);
-          zonaCols.forEach(col => {
-            const ejemplo = jsonData[0][col];
-            console.log(`   "${col}" = "${ejemplo}"`);
-          });
-        }
-      }
-
-      if (tipo === 1) this.consolidado1 = jsonData;
-      else if (tipo === 2) this.consolidado2 = jsonData;
-      else if (tipo === 3) {
-        this.nodosData = jsonData;
-        this.processNodos();
-      } else if (tipo === 4) {
-        this.fmsData = jsonData;
-        this.processFMS();
-      }
-
-      if (jsonData.length > 0) {
-        Object.keys(jsonData[0]).forEach(col => this.allColumns.add(col));
-      }
-
-      return {success: true, rows: jsonData.length};
-    } catch (e) {
-      console.error('Error loading Excel:', e);
-      return {success: false, error: e.message};
-    }
-  }
-
-  async loadCSV(file) {
-    try {
-      const text = await file.text();
-      const lines = text.split('\n').filter(l => l.trim());
-
-      if (lines.length < 2) {
-        return {success: false, error: 'CSV vacío'};
-      }
-
-      const parseCSVLine = (line) => {
-        const result = [];
-        let current = '';
-        let inQuotes = false;
-
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-
-          if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if (char === ',' && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-          } else {
-            current += char;
-          }
-        }
-        result.push(current.trim());
-        return result;
-      };
-
-      const headers = parseCSVLine(lines[0]);
-      const rows = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const values = parseCSVLine(lines[i]);
-        const obj = {};
-        headers.forEach((h, idx) => {
-          obj[h] = values[idx] || '';
-        });
-        rows.push(obj);
-      }
-
-      console.log(`✅ CSV Alarmas: ${rows.length} alarmas leídas`);
-      this.fmsData = rows;
-      this.processFMS();
-
-      return {success: true, rows: rows.length};
-    } catch (e) {
-      console.error('Error loading CSV:', e);
-      return {success: false, error: e.message};
-    }
-  }
-
-  processNodos() {
-    if (!this.nodosData) return;
-
-    this.nodosData.forEach(n => {
-      const nodo = String(n['Nodo'] || '').trim();
-      if (!nodo || nodo === '-' || nodo.includes('SIN_NODO')) return;
-
-      const up = parseFloat(n['Up']) || 0;
-      const down = parseFloat(n['Down']) || 0;
-      const cmts = String(n['CMTS'] || '').trim();
-
-      let estado = 'up';
-      if (down > 50) estado = 'critical';
-      else if (down > 0) estado = 'down';
-
-      this.nodosMap.set(nodo, {
-        cmts,
-        up,
-        down,
-        estado,
-        total: up + down
-      });
-    });
-
-    console.log(`✅ Procesados ${this.nodosMap.size} nodos`);
-  }
-
-  processFMS() {
-    if (!this.fmsData) return;
-
-    console.log('Procesando alarmas FMS...');
-
-    this.fmsData.forEach(f => {
-      const zonaTecnica = String(f['networkElement.technicalZone'] || '').trim();
-      if (!zonaTecnica) return;
-
-      const alarma = {
-        eventId: f['eventId'] || '',
-        type: f['type'] || '',
-        creationDate: f['creationDate'] || '',
-        recoveryDate: f['recoveryDate'] || '',
-        elementType: f['networkElement.type'] || '',
-        elementCode: f['networkElement.code'] || '',
-        damage: f['damage'] || '',
-        incidentClassification: f['incidentClassification'] || '',
-        damageClassification: f['damageClassification'] || '',
-        claims: f['claims'] || '',
-        childCount: f['networkElement.childCount'] || '',
-        cmCount: f['networkElement.cmCount'] || '',
-        isActive: !f['recoveryDate'] || f['recoveryDate'] === ''
-      };
-
-      if (!this.fmsMap.has(zonaTecnica)) {
-        this.fmsMap.set(zonaTecnica, []);
-      }
-      this.fmsMap.get(zonaTecnica).push(alarma);
-    });
-
-    console.log(`✅ Procesadas alarmas para ${this.fmsMap.size} zonas técnicas`);
-  }
-
-  merge() {
-    if (!this.consolidado1 && !this.consolidado2) return [];
-    if (!this.consolidado1) return this.consolidado2 || [];
-    if (!this.consolidado2) return this.consolidado1 || [];
-
-    const map = new Map();
-
-    this.consolidado1.forEach(r => {
-      const cita = r['Número de cita'];
-      if (cita) {
-        if (!map.has(cita)) {
-          map.set(cita, {...r, _merged: false});
-        }
-      }
-    });
-
-    this.consolidado2.forEach(r => {
-      const cita = r['Número de cita'];
-      if (cita) {
-        if (map.has(cita)) {
-          const existing = map.get(cita);
-          Object.keys(r).forEach(key => {
-            if (!existing[key] || existing[key] === '') {
-              existing[key] = r[key];
-            }
-          });
-          existing._merged = true;
-        } else {
-          map.set(cita, {...r, _merged: false});
-        }
-      }
-    });
-
-    const result = Array.from(map.values());
-    console.log(`✅ Total órdenes únicas (deduplicadas): ${result.length}`);
-
-    return result;
-  }
-
-  processZones(rows) {
-    const zoneGroups = new Map();
-
-    rows.forEach(r => {
-      const {zonaPrincipal, tipo} = this.getZonaPrincipal(r);
-      if (!zonaPrincipal) return;
-
-      if (!zoneGroups.has(zonaPrincipal)) {
-        zoneGroups.set(zonaPrincipal, {
-          zona: zonaPrincipal,
-          tipo: tipo,
-          zonaHFC: r['Zona Tecnica HFC'] || r['Zona Tecnica'] || '',
-          zonaFTTH: r['Zona Tecnica FTTH'] || '',
-          territorio: r['Territorio de servicio: Nombre'] || r['Territorio'] || '',
-          ordenes: []
-        });
-      }
-
-      zoneGroups.get(zonaPrincipal).ordenes.push(r);
-    });
-
-    return Array.from(zoneGroups.values());
-  }
-
-  getZonaPrincipal(orden) {
-    const hfc = orden['Zona Tecnica HFC'] || orden['Zona Tecnica'] || '';
-    const ftth = orden['Zona Tecnica FTTH'] || '';
-
-    const esFTTH = /9\d{2}/.test(hfc);
-
-    if (esFTTH && ftth) {
-      return {zonaPrincipal: ftth, tipo: 'FTTH'};
-    }
-
-    return {zonaPrincipal: hfc || ftth, tipo: 'HFC'};
-  }
-
-  analyzeZones(zones, daysWindow) {
-    const today = new Date();
-    today.setHours(0,0,0,0);
-
-    console.log(`✅ Analizando zonas con ventana de ${daysWindow} días`);
-
-    return zones.map(z => {
-      const seenOTperDay = new Map();
-      const ordenesPerDay = new Map();
-      let ordenesEnVentana = 0;
-
-      const diagnosticos = new Set();
-
-      z.ordenes.forEach(o => {
-        const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
-        const dt = DateUtils.parse(fecha);
-        if (!dt) return;
-
-        const daysAgo = DateUtils.daysBetween(today, dt);
-
-        if (daysAgo <= daysWindow) {
-          ordenesEnVentana++;
-
-          const dk = DateUtils.toDayKey(dt);
-          if (!seenOTperDay.has(dk)) seenOTperDay.set(dk, new Set());
-          if (!ordenesPerDay.has(dk)) ordenesPerDay.set(dk, []);
-
-          const cita = o['Número de cita'];
-          if (cita) {
-            seenOTperDay.get(dk).add(cita);
-            ordenesPerDay.get(dk).push(o);
-          }
-
-          const diag = o['Diagnostico Tecnico'] || o['Diagnóstico Técnico'] || '';
-          if (diag) diagnosticos.add(diag);
-        }
-      });
-
-      const todayKey = DateUtils.toDayKey(today);
-      const yesterdayKey = DateUtils.toDayKey(new Date(today.getTime() - 86400000));
-
-      const ingresoN = seenOTperDay.get(todayKey)?.size || 0;
-      const ingresoN1 = seenOTperDay.get(yesterdayKey)?.size || 0;
-      const maxDia = Math.max(0, ...Array.from(seenOTperDay.values()).map(s => s.size));
-
-      const score = 4 * ingresoN + 2 * ingresoN1 + 1.5 * maxDia;
-      const criticidad = score >= 12 ? 'CRÍTICO' : score >= 7 ? 'ALTO' : 'MEDIO';
-
-      const last7Days = [];
-      const last7DaysCounts = [];
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        const dk = DateUtils.toDayKey(date);
-        last7Days.push(DateUtils.format(date).slice(0, 5));
-        last7DaysCounts.push(seenOTperDay.get(dk)?.size || 0);
-      }
-
-      let nodoInfo = null;
-      if (this.nodosMap.has(z.zona)) {
-        nodoInfo = this.nodosMap.get(z.zona);
-      } else if (z.zonaHFC && this.nodosMap.has(z.zonaHFC)) {
-        nodoInfo = this.nodosMap.get(z.zonaHFC);
-      }
-
-      const alarmasFMS = this.fmsMap.get(z.zona) || 
-                       this.fmsMap.get(z.zonaHFC) || 
-                       this.fmsMap.get(z.zonaFTTH) || [];
-      const alarmasActivas = alarmasFMS.filter(a => a.isActive);
-
-      return {
-        ...z,
-        totalOTs: ordenesEnVentana,
-        ingresoN,
-        ingresoN1,
-        maxDia,
-        score,
-        criticidad,
-        cmts: nodoInfo?.cmts || '',
-        nodoUp: nodoInfo?.up || 0,
-        nodoDown: nodoInfo?.down || 0,
-        nodoEstado: nodoInfo?.estado || 'unknown',
-        last7Days,
-        last7DaysCounts,
-        diagnosticos: Array.from(diagnosticos),
-        alarmas: alarmasFMS,
-        alarmasActivas: alarmasActivas.length,
-        tieneAlarma: alarmasActivas.length > 0,
-        ordenesOriginales: z.ordenes
-      };
-    }).sort((a,b) => b.score - a.score);
-  }
-
-  analyzeCMTS(zones) {
-    const cmtsGroups = new Map();
-
-    zones.forEach(z => {
-      if (!z.cmts) return;
-
-      if (!cmtsGroups.has(z.cmts)) {
-        cmtsGroups.set(z.cmts, {
-          cmts: z.cmts,
-          zonas: [],
-          totalOTs: 0,
-          zonasUp: 0,
-          zonasDown: 0,
-          zonasCriticas: 0
-        });
-      }
-
-      const group = cmtsGroups.get(z.cmts);
-      group.zonas.push(z);
-      group.totalOTs += z.totalOTs;
-
-      if (z.nodoEstado === 'up') group.zonasUp++;
-      else if (z.nodoEstado === 'down' || z.nodoEstado === 'critical') group.zonasDown++;
-
-      if (z.nodoEstado === 'critical') group.zonasCriticas++;
-    });
-
-    return Array.from(cmtsGroups.values()).sort((a,b) => b.totalOTs - a.totalOTs);
-  }
-}
-
-const dataProcessor = new DataProcessor();
 
 // Filtros MEJORADOS con ordenamiento
 const Filters = {
@@ -601,86 +34,34 @@ const Filters = {
   equipoMarca: '',
 
   apply(rows) {
-    let filtered = rows.slice();
+    const queries = this.quickSearch
+      ? this.quickSearch.split(';').map(q => q.trim()).filter(Boolean)
+      : [];
 
-    const today = new Date();
-    today.setHours(0,0,0,0);
+    return rows.filter(r => {
+      const meta = r.__meta || {};
 
-    filtered = filtered.filter(r => {
-      const fecha = r['Fecha de creación'] || r['Fecha/Hora de apertura'] || r['Fecha de inicio'];
-      const dt = DateUtils.parse(fecha);
-      if (!dt) return false;
-      const daysAgo = DateUtils.daysBetween(today, dt);
-      return daysAgo <= this.days;
-    });
+      if (meta.daysFromToday > this.days) return false;
 
-    if (!this.showAllStates) {
-      filtered = filtered.filter(r => {
-        const estRaw = (r['Estado.1'] || r['Estado'] || r['Estado.2'] || '').toString().toUpperCase().trim();
-        if (!estRaw) return false;
-        if (CONFIG.estadosOcultosPorDefecto.includes(estRaw)) return false;
-        return CONFIG.estadosPermitidos.includes(estRaw);
-      });
-    }
+      if (!this.showAllStates && !meta.estadoValido) return false;
 
-    if (this.catec) {
-      filtered = filtered.filter(r => {
-        const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
-        return tipo.toUpperCase().includes('CATEC');
-      });
-    }
+      if (this.catec && !meta.tipoTrabajo.includes('CATEC')) return false;
+      if (this.ftth && !meta.esFTTH) return false;
+      if (this.excludeFTTH && meta.esFTTH) return false;
+      if (this.territorio && meta.territorio !== this.territorio) return false;
+      if (this.sistema && meta.sistema !== this.sistema) return false;
 
-    if (this.ftth) {
-      filtered = filtered.filter(r => {
-        const hfc = r['Zona Tecnica HFC'] || '';
-        return /9\d{2}/.test(hfc);
-      });
-    }
-
-    if (this.excludeFTTH) {
-      filtered = filtered.filter(r => {
-        const hfc = r['Zona Tecnica HFC'] || '';
-        return !/9\d{2}/.test(hfc);
-      });
-    }
-
-    if (this.territorio) {
-      filtered = filtered.filter(r => {
-        const terr = r['Territorio de servicio: Nombre'] || '';
-        return terr === this.territorio;
-      });
-    }
-
-    if (this.sistema) {
-      filtered = filtered.filter(r => {
-        const numCaso = r['Número del caso'] || r['Caso Externo'] || '';
-        const sistema = TextUtils.detectarSistema(numCaso);
-        return sistema === this.sistema;
-      });
-    }
-
-    if (this.quickSearch) {
-      const queries = this.quickSearch.split(';').map(q => q.trim()).filter(Boolean);
-
-      filtered = filtered.filter(r => {
-        const searchable = [
-          r['Zona Tecnica HFC'],
-          r['Zona Tecnica FTTH'],
-          r['Calle'],
-          r['Caso Externo'],
-          r['External Case Id'],
-          r['Número del caso']
-        ].join(' ');
-
+      if (queries.length) {
+        if (!meta.searchable) return false;
         if (queries.length === 1) {
-          return TextUtils.matches(searchable, queries[0]);
+          if (!TextUtils.matches(meta.searchable, queries[0])) return false;
         } else {
-          return TextUtils.matchesMultiple(searchable, queries);
+          if (!TextUtils.matchesMultiple(meta.searchable, queries)) return false;
         }
-      });
-    }
+      }
 
-    return filtered;
+      return true;
+    });
   },
 
   applyToZones(zones) {
@@ -718,312 +99,7 @@ const Filters = {
   }
 };
 
-// UIRenderer (completo)
-const UIRenderer = {
-  renderStats(data) {
-    return `
-      <div class="stat-card"><div class="stat-label">Total Órdenes</div><div class="stat-value">${NumberUtils.format(data.total)}</div></div>
-      <div class="stat-card"><div class="stat-label">Zonas Analizadas</div><div class="stat-value">${NumberUtils.format(data.zonas)}</div></div>
-      <div class="stat-card"><div class="stat-label">Zonas Críticas</div><div class="stat-value">${NumberUtils.format(data.criticas)}</div></div>
-      <div class="stat-card"><div class="stat-label">Zonas FTTH</div><div class="stat-value">${NumberUtils.format(data.ftth)}</div></div>
-      <div class="stat-card"><div class="stat-label">Con Alarmas</div><div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div></div>
-      <div class="stat-card"><div class="stat-label">Nodos Críticos</div><div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div></div>
-    `;
-  },
 
-  renderSparkline(counts, labels) {
-    const max = Math.max(...counts, 1);
-    const width = 120;
-    const height = 30;
-    const barWidth = width / counts.length;
-
-    let svg = `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
-
-    counts.forEach((count, i) => {
-      const barHeight = (count / max) * height;
-      const x = i * barWidth;
-      const y = height - barHeight;
-      const color = count >= max * 0.7 ? '#D13438' : count >= max * 0.4 ? '#F7630C' : '#0078D4';
-
-      svg += `<rect x="${x}" y="${y}" width="${barWidth - 2}" height="${barHeight}" fill="${color}" rx="2"/>`;
-    });
-
-    svg += '</svg>';
-    return svg;
-  },
-
-  renderZonas(zones) {
-    if (!zones.length) return '<div class="loading-message"><p>No hay zonas para mostrar</p></div>';
-
-    let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
-    html += '<th>Zona</th><th>Tipo</th><th>Red</th><th>CMTS</th><th>Nodo</th>';
-    html += '<th>Alarma</th><th>Gráfico 7 Días</th>';
-    html += '<th class="number">Total</th><th class="number">N</th><th class="number">N-1</th>';
-    html += '<th>Acción</th>';
-    html += '</tr></thead><tbody>';
-
-    zones.slice(0, 200).forEach((z, idx) => {
-      const badgeTipo = z.tipo === 'FTTH' ? '<span class="badge badge-ftth">FTTH</span>' : '<span class="badge badge-hfc">HFC</span>';
-      const red = z.tipo === 'FTTH' ? z.zonaHFC : '-';
-
-      let badgeNodo = '<span class="badge">Sin datos</span>';
-      if (z.nodoEstado === 'up') {
-        badgeNodo = `<span class="badge badge-up">✓ UP (${z.nodoUp})</span>`;
-      } else if (z.nodoEstado === 'critical') {
-        badgeNodo = `<span class="badge badge-critical">⚠ CRÍTICO (↓${z.nodoDown})</span>`;
-      } else if (z.nodoEstado === 'down') {
-        badgeNodo = `<span class="badge badge-down">↓ DOWN (${z.nodoDown})</span>`;
-      }
-
-      let badgeAlarma = '<span class="badge">Sin alarma</span>';
-      if (z.tieneAlarma) {
-        badgeAlarma = `<span class="badge badge-alarma badge-alarma-activa" onclick="showAlarmaInfo(${idx})">🚨 ${z.alarmasActivas} Activa(s)</span>`;
-      }
-
-      const cmtsShort = z.cmts ? z.cmts.substring(0, 15) + (z.cmts.length > 15 ? '...' : '') : '-';
-      const sparkline = this.renderSparkline(z.last7DaysCounts, z.last7Days);
-
-      html += `<tr>
-        <td><strong>${z.zona}</strong></td>
-        <td>${badgeTipo}</td>
-        <td>${red}</td>
-        <td title="${z.cmts}">${cmtsShort}</td>
-        <td>${badgeNodo}</td>
-        <td>${badgeAlarma}</td>
-        <td>${sparkline}</td>
-        <td class="number">${z.totalOTs}</td>
-        <td class="number">${z.ingresoN}</td>
-        <td class="number">${z.ingresoN1}</td>
-        <td><button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openModal(${idx})">👁️ Ver</button></td>
-      </tr>`;
-    });
-
-    html += '</tbody></table></div></div>';
-    return html;
-  },
-
-  renderCMTS(cmtsData) {
-    if (!cmtsData.length) return '<div class="loading-message"><p>No hay datos de CMTS para mostrar</p></div>';
-
-    let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
-    html += '<th>CMTS</th><th class="number">Zonas</th><th class="number">Total OTs</th>';
-    html += '<th class="number">Zonas UP</th><th class="number">Zonas DOWN</th><th class="number">Zonas Críticas</th>';
-    html += '<th>Acción</th>';
-    html += '</tr></thead><tbody>';
-
-    cmtsData.forEach((c, idx) => {
-      const cmtsShort = c.cmts.substring(0, 30) + (c.cmts.length > 30 ? '...' : '');
-
-      html += `<tr>
-        <td title="${c.cmts}"><strong>${cmtsShort}</strong></td>
-        <td class="number">${c.zonas.length}</td>
-        <td class="number">${c.totalOTs}</td>
-        <td class="number">${c.zonasUp}</td>
-        <td class="number">${c.zonasDown}</td>
-        <td class="number">${c.zonasCriticas}</td>
-        <td><button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openCMTSDetail('${c.cmts.replace(/'/g, "\\'")}')">👁️ Ver Zonas</button></td>
-      </tr>`;
-    });
-
-    html += '</tbody></table></div></div>';
-    return html;
-  },
-
-  renderEdificios(ordenes) {
-    const edificios = new Map();
-
-    ordenes.forEach(o => {
-      const dir = TextUtils.normalize(o['Calle']);
-      if (!dir || dir.length < 5) return;
-
-      if (!edificios.has(dir)) {
-        edificios.set(dir, {
-          direccion: o['Calle'],
-          zona: o['Zona Tecnica HFC'] || o['Zona Tecnica FTTH'],
-          territorio: o['Territorio de servicio: Nombre'] || '',
-          casos: []
-        });
-      }
-      edificios.get(dir).casos.push(o);
-    });
-
-    const sorted = Array.from(edificios.values())
-      .filter(e => e.casos.length >= 2)
-      .sort((a,b) => b.casos.length - a.casos.length)
-      .slice(0, 50);
-
-    if (!sorted.length) return '<div class="loading-message"><p>No hay edificios con 2+ incidencias</p></div>';
-
-    let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
-    html += '<th>Dirección</th><th>Zona</th><th>Territorio</th><th class="number">Total OTs</th>';
-    html += '</tr></thead><tbody>';
-
-    sorted.forEach((e, idx) => {
-      html += `<tr class="clickable" onclick="showEdificioDetail(${idx})">
-        <td><strong>${e.direccion}</strong></td>
-        <td>${e.zona}</td>
-        <td>${e.territorio}</td>
-        <td class="number">${e.casos.length}</td>
-      </tr>`;
-    });
-
-    html += '</tbody></table></div></div>';
-
-    window.edificiosData = sorted;
-
-    return html;
-  },
-
-  renderEquipos(ordenes) {
-    const grupos = new Map();
-    let debugMuestra = 0;
-
-    ordenes.forEach((o, idx) => {
-      const zona = o['Zona Tecnica HFC'] || o['Zona Tecnica FTTH'] || '';
-      const numCaso = o['Número del caso'] || o['Caso Externo'] || '';
-      const sistema = TextUtils.detectarSistema(numCaso);
-
-      const colInfo = findDispositivosColumn(o);
-      const infoDispositivos = colInfo ? o[colInfo] : '';
-
-      if (debugMuestra < 3) {
-        console.log('[Equipos] Orden muestra', idx, {zona, numCaso, colInfoEncontrada: colInfo});
-        debugMuestra++;
-      }
-
-      const dispositivos = TextUtils.parseDispositivosJSON(infoDispositivos);
-      dispositivos.forEach(d => {
-        const item = {
-          zona,
-          numCaso,
-          sistema,
-          serialNumber: d.serialNumber,
-          macAddress: d.macAddress,
-          tipo: d.description,
-          marca: d.category,
-          modelo: d.model
-        };
-        if (!grupos.has(zona)) grupos.set(zona, []);
-        grupos.get(zona).push(item);
-      });
-    });
-
-    // Obtener modelos y marcas únicos
-    const modelos = new Set();
-    const marcas = new Set();
-    grupos.forEach(arr => {
-      arr.forEach(e => {
-        if (e.modelo) modelos.add(e.modelo);
-        if (e.marca) marcas.add(e.marca);
-      });
-    });
-
-    const zonas = Array.from(grupos.keys()).sort((a,b)=>a.localeCompare(b));
-    if (!zonas.length) {
-      return '<div class="loading-message"><p>⚠️ No se encontraron equipos en las órdenes (revisa la columna de Información de Dispositivos).</p></div>';
-    }
-
-    if (!window.equiposOpen) window.equiposOpen = new Set();
-
-    // NUEVO: Panel de filtros
-    let html = '<div class="equipos-filters">';
-    html += '<div class="filter-group">';
-    html += '<div class="filter-label">Filtrar por Modelo</div>';
-    html += '<select id="filterEquipoModelo" class="input-select" onchange="applyEquiposFilters()">';
-    html += '<option value="">Todos los modelos</option>';
-    Array.from(modelos).sort().forEach(m => {
-      const selected = Filters.equipoModelo === m ? 'selected' : '';
-      html += `<option value="${m}" ${selected}>${m || '(Sin modelo)'}</option>`;
-    });
-    html += '</select>';
-    html += '</div>';
-
-    html += '<div class="filter-group">';
-    html += '<div class="filter-label">Filtrar por Marca</div>';
-    html += '<select id="filterEquipoMarca" class="input-select" onchange="applyEquiposFilters()">';
-    html += '<option value="">Todas las marcas</option>';
-    Array.from(marcas).sort().forEach(m => {
-      const selected = Filters.equipoMarca === m ? 'selected' : '';
-      html += `<option value="${m}" ${selected}>${m || '(Sin marca)'}</option>`;
-    });
-    html += '</select>';
-    html += '</div>';
-
-    html += '<div class="filter-group">';
-    html += '<button class="btn btn-secondary" onclick="clearEquiposFilters()" style="margin-top: 18px;">🔄 Limpiar filtros</button>';
-    html += '</div>';
-    html += '</div>';
-
-    // Aplicar filtros
-    let gruposFiltrados = new Map();
-    grupos.forEach((arr, zona) => {
-      let filtrado = arr;
-
-      if (Filters.equipoModelo) {
-        filtrado = filtrado.filter(e => e.modelo === Filters.equipoModelo);
-      }
-
-      if (Filters.equipoMarca) {
-        filtrado = filtrado.filter(e => e.marca === Filters.equipoMarca);
-      }
-
-      if (filtrado.length > 0) {
-        gruposFiltrados.set(zona, filtrado);
-      }
-    });
-
-    const zonasFiltradas = Array.from(gruposFiltrados.keys()).sort((a,b)=>a.localeCompare(b));
-
-    if (zonasFiltradas.length === 0) {
-      html += '<div class="loading-message"><p>No hay equipos que coincidan con los filtros seleccionados</p></div>';
-      return html;
-    }
-
-    html += '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
-    html += '<th>Zona</th><th class="number">Equipos</th><th>Acción</th>';
-    html += '</tr></thead><tbody>';
-
-    zonasFiltradas.forEach((z) => {
-      const arr = gruposFiltrados.get(z) || [];
-      const open = window.equiposOpen.has(z);
-      html += `<tr class="clickable" onclick="toggleEquiposGrupo('${z.replace(/'/g,"\\'")}')">
-        <td><strong>${z || '-'}</strong></td>
-        <td class="number">${arr.length}</td>
-        <td><button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="event.stopPropagation(); exportEquiposGrupoExcel('${z.replace(/'/g,"\\'")}', true)">📥 Exportar</button></td>
-      </tr>`;
-
-      if (open) {
-        html += `<tr><td colspan="3">`;
-        html += '<div class="table-container"><div class="table-wrapper"><table class="detail-table"><thead><tr>';
-        html += '<th>Caso</th><th>Sistema</th><th>Serial</th><th>MAC</th><th>Tipo</th><th>Marca</th><th>Modelo</th>';
-        html += '</tr></thead><tbody>';
-        arr.slice(0,1000).forEach(e => {
-          const badge = e.sistema==='OPEN' ? '<span class="badge badge-open">OPEN</span>'
-                       : e.sistema==='FAN' ? '<span class="badge badge-fan">FAN</span>' : '';
-          html += `<tr>
-            <td style="font-family:monospace">${e.numCaso||''}</td>
-            <td>${badge}</td>
-            <td style="font-family:monospace">${e.serialNumber||''}</td>
-            <td style="font-family:monospace">${e.macAddress||''}</td>
-            <td>${e.tipo||''}</td>
-            <td>${e.marca||''}</td>
-            <td>${e.modelo||''}</td>
-          </tr>`;
-        });
-        html += '</tbody></table></div></div>';
-        html += `</td></tr>`;
-      }
-    });
-
-    html += '</tbody></table></div></div>';
-    html += `<p style="text-align:center;margin-top:12px;color:var(--text-secondary)">Total: ${zonasFiltradas.length} zonas • Click para expandir/colapsar • Exporta por zona o global</p>`;
-
-    window.equiposPorZona = gruposFiltrados;
-    window.equiposPorZonaCompleto = grupos; // Guardamos la data completa
-
-    return html;
-  }
-};
 
 function applyEquiposFilters() {
   Filters.equipoModelo = document.getElementById('filterEquipoModelo').value;
@@ -1069,6 +145,63 @@ let allZones = [];
 let allCMTS = [];
 let currentZone = null;
 let selectedOrders = new Set();
+let baseZoneGroups = [];
+let equipmentCache = new Map();
+window.equipmentCache = equipmentCache;
+
+function ensureOrderRowKey(order, index = 0, zona = '') {
+  if (!order) return '';
+  if (order.__rowKey) return order.__rowKey;
+
+  const candidateFields = [
+    'Número de cita',
+    'Número del caso',
+    'Caso Externo',
+    'Caso externo',
+    'External Case Id',
+    'CASO EXTERNO',
+    'external_case_id'
+  ];
+
+  for (const field of candidateFields) {
+    const value = order[field];
+    if (value !== undefined && value !== null) {
+      const trimmed = String(value).trim();
+      if (trimmed) {
+        order.__rowKey = trimmed;
+        return order.__rowKey;
+      }
+    }
+  }
+
+  const zonaSegment = zona ? String(zona).replace(/[^A-Za-z0-9]/g, '').slice(0, 10) : 'zona';
+  order.__rowKey = `row_${zonaSegment}_${Date.now()}_${index}`;
+  return order.__rowKey;
+}
+
+function setZoneModalFooter() {
+  const footer = document.getElementById('modalFooter');
+  if (!footer) return;
+
+  const disabledAttr = selectedOrders.size > 0 ? '' : 'disabled';
+  footer.innerHTML = `
+    <div class="selection-info" id="selectionInfo">${selectedOrders.size} órdenes seleccionadas</div>
+    <div class="modal-footer-actions">
+      <button class="btn btn-primary" onclick="exportModalDetalleExcel()">
+        📄 Exportar detalle
+      </button>
+      <button class="btn btn-primary" onclick="exportZoneOrdersExcel()">
+        📥 Exportar Excel (Zona)
+      </button>
+      <button class="btn btn-warning" id="btnExportBEFAN" ${disabledAttr} onclick="exportBEFAN()">
+        📤 Exportar BEFAN (TXT)
+      </button>
+      <button class="btn btn-secondary" onclick="closeModal()">
+        Cerrar
+      </button>
+    </div>
+  `;
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
@@ -1141,14 +274,20 @@ function processData() {
 
   const daysWindow = parseInt(document.getElementById('daysWindow').value);
 
-  const zones = dataProcessor.processZones(merged);
-  allZones = dataProcessor.analyzeZones(zones, daysWindow);
+  const prepared = dataProcessor.prepareOrders(merged);
+  baseZoneGroups = dataProcessor.processZones(prepared);
+  const zonesForAnalysis = baseZoneGroups.map(z => ({...z, ordenes: z.ordenes.slice()}));
+
+  allZones = dataProcessor.analyzeZones(zonesForAnalysis, daysWindow);
   allCMTS = dataProcessor.analyzeCMTS(allZones);
 
   currentData = {
-    ordenes: merged,
-    zonas: allZones
+    ordenes: prepared,
+    zonas: baseZoneGroups
   };
+
+  equipmentCache = buildEquipmentCache(prepared);
+  window.equipmentCache = equipmentCache;
 
   populateFilters();
 
@@ -1178,6 +317,36 @@ function processData() {
   applyFilters();
 }
 
+function buildEquipmentCache(orders) {
+  const cache = new Map();
+
+  orders.forEach(order => {
+    const meta = order.__meta || {};
+    if (!meta.zonaPrincipal || !meta.dispositivos || !meta.dispositivos.length) return;
+
+    if (!cache.has(meta.zonaPrincipal)) {
+      cache.set(meta.zonaPrincipal, []);
+    }
+
+    const target = cache.get(meta.zonaPrincipal);
+    meta.dispositivos.forEach(device => {
+      target.push({
+        zona: meta.zonaPrincipal,
+        numCaso: meta.numeroCaso || order['Número de cita'] || '',
+        sistema: meta.sistema || '',
+        serialNumber: device.serialNumber || '',
+        macAddress: device.macAddress || '',
+        tipo: device.description || device.type || '',
+        marca: device.category || '',
+        modelo: device.model || ''
+      });
+    });
+  });
+
+  console.log(`✅ Cache de equipos construida para ${cache.size} zonas`);
+  return cache;
+}
+
 function populateFilters() {
   const territorios = [...new Set(currentData.ordenes.map(o => o['Territorio de servicio: Nombre']).filter(Boolean))];
   const terrSelect = document.getElementById('filterTerritorio');
@@ -1205,13 +374,25 @@ function applyFilters() {
   Filters.ordenarPorIngreso = document.getElementById('ordenarPorIngreso').value;
 
   console.log(`✅ Aplicando filtros - Ventana: ${Filters.days} días`);
-  console.log(`📊 Estados activos: ${CONFIG.estadosPermitidos.join(', ')}`);
+  console.log(`📊 Estados permitidos Estado.1: ${CONFIG.estadosPermitidosEstado1.join(', ')}`);
+  console.log(`📊 Estados permitidos Estado.2: ${CONFIG.estadosPermitidosEstado2.join(', ')}`);
   console.log(`🔥 Ordenamiento: ${Filters.ordenarPorIngreso || 'Por score'}`);
 
   const filtered = Filters.apply(currentData.ordenes);
   console.log(`Órdenes después de filtros: ${filtered.length}`);
 
-  const zones = dataProcessor.processZones(filtered);
+  const filteredSet = new Set(filtered);
+  const zones = baseZoneGroups
+    .map(zone => {
+      const matched = zone.ordenes.filter(order => filteredSet.has(order));
+      if (!matched.length) return null;
+      return {
+        ...zone,
+        ordenes: matched
+      };
+    })
+    .filter(Boolean);
+
   let analyzed = dataProcessor.analyzeZones(zones, Filters.days);
 
   analyzed = Filters.applyToZones(analyzed);
@@ -1359,10 +540,18 @@ function openModal(zoneIdx) {
   currentZone = zonaData;
   selectedOrders.clear();
 
+  setZoneModalFooter();
+
   document.getElementById('modalTitle').textContent = `Detalle: ${currentZone.zona}`;
 
   const ordenesParaModal = currentZone.ordenesOriginales || currentZone.ordenes;
   currentZone.ordenes = ordenesParaModal;
+  currentZone.ordenes.forEach((order, idx) => ensureOrderRowKey(order, idx, currentZone.zona));
+
+  const modalFilters = document.getElementById('modalFilters');
+  if (modalFilters) {
+    modalFilters.style.display = 'flex';
+  }
 
   const dias = [...new Set(ordenesParaModal.map(o => {
     const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
@@ -1449,25 +638,22 @@ function closeModal() {
   document.getElementById('filterHorario').value = '';
   document.getElementById('filterDia').value = '';
 
-  document.getElementById('modalFilters').style.display = 'flex';
-  document.getElementById('modalFooter').innerHTML = `
-    <div class="selection-info" id="selectionInfo">0 órdenes seleccionadas</div>
-    <div style="display: flex; gap: 8px;">
-      <button class="btn btn-warning" id="btnExportBEFAN" disabled onclick="exportBEFAN()">
-        📤 Exportar BEFAN (TXT)
-      </button>
-      <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
-    </div>
-  `;
+  const modalFilters = document.getElementById('modalFilters');
+  if (modalFilters) {
+    modalFilters.style.display = 'flex';
+  }
+  setZoneModalFooter();
+  updateSelectionInfo();
 }
 
 function applyModalFilters() {
   renderModalContent();
 }
 
-function renderModalContent() {
-  const horario = document.getElementById('filterHorario').value;
-  const dia = document.getElementById('filterDia').value;
+function getFilteredModalOrders(horario, dia) {
+  if (!currentZone || !Array.isArray(currentZone.ordenes)) {
+    return [];
+  }
 
   let ordenes = currentZone.ordenes.slice();
 
@@ -1489,6 +675,15 @@ function renderModalContent() {
       return dt && DateUtils.format(dt) === dia;
     });
   }
+
+  return ordenes;
+}
+
+function renderModalContent() {
+  const horario = document.getElementById('filterHorario').value;
+  const dia = document.getElementById('filterDia').value;
+
+  const ordenes = getFilteredModalOrders(horario, dia);
 
   let html = '<div class="chart-container">';
   html += '<div class="chart-title">📊 Distribución de Ingresos (7 días)</div>';
@@ -1527,10 +722,11 @@ function renderModalContent() {
   html += '</tr></thead><tbody>';
 
   ordenes.forEach((o, idx) => {
-    const cita = o['Número de cita'] || `row_${idx}`;
-    const checked = selectedOrders.has(cita) ? 'checked' : '';
+    const rowKey = ensureOrderRowKey(o, idx, currentZone?.zona);
+    const checked = selectedOrders.has(rowKey) ? 'checked' : '';
+    const safeRowKey = String(rowKey).replace(/"/g, '&quot;');
     html += `<tr>`;
-    html += `<td><input type="checkbox" class="order-checkbox" data-cita="${cita}" ${checked} onchange="updateSelection()"></td>`;
+    html += `<td><input type="checkbox" class="order-checkbox" data-cita="${safeRowKey}" ${checked} onchange="updateSelection()"></td>`;
 
     columns.forEach(col => {
       let value = o[col] || '';
@@ -1602,10 +798,7 @@ function exportBEFAN() {
     return;
   }
 
-  const ordenes = currentZone.ordenes.filter(o => {
-    const cita = o['Número de cita'];
-    return selectedOrders.has(cita);
-  });
+  const ordenes = currentZone.ordenes.filter((o, idx) => selectedOrders.has(ensureOrderRowKey(o, idx, currentZone?.zona)));
 
   let txt = '';
   let contadorExitoso = 0;
@@ -1645,6 +838,57 @@ function exportBEFAN() {
     console.error('Error al descargar BEFAN:', error);
     toast('❌ Error al descargar archivo BEFAN');
   }
+}
+
+function exportZoneOrdersExcel() {
+  if (!currentZone || !Array.isArray(currentZone.ordenes) || !currentZone.ordenes.length) {
+    toast('❌ No hay una zona activa para exportar');
+    return;
+  }
+
+  const horario = document.getElementById('filterHorario')?.value || '';
+  const dia = document.getElementById('filterDia')?.value || '';
+
+  let ordenes = getFilteredModalOrders(horario, dia);
+
+  if (!ordenes.length) {
+    toast('⚠️ No hay órdenes para exportar con los filtros aplicados');
+    return;
+  }
+
+  if (selectedOrders.size > 0) {
+    ordenes = ordenes.filter((o, idx) => selectedOrders.has(ensureOrderRowKey(o, idx, currentZone?.zona)));
+    if (!ordenes.length) {
+      toast('⚠️ La selección actual no tiene órdenes disponibles para exportar');
+      return;
+    }
+  }
+
+  const sanitized = ordenes.map(order => {
+    const clean = {};
+    Object.keys(order).forEach(key => {
+      if (!key.startsWith('_')) {
+        clean[key] = order[key];
+      }
+    });
+    return clean;
+  });
+
+  if (!sanitized.length) {
+    toast('⚠️ No hay datos exportables para la zona seleccionada');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const rawSheetName = currentZone.zona || 'Zona';
+  const sheetName = rawSheetName.toString().slice(0, 28) || 'Zona';
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitized), sheetName);
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  const fileSafeZone = sheetName.replace(/[^A-Za-z0-9_-]/g, '_') || 'Zona';
+  XLSX.writeFile(wb, `Zona_${fileSafeZone}_${fecha}.xlsx`);
+
+  toast(`✅ Exportadas ${sanitized.length} órdenes de ${rawSheetName}`);
 }
 
 function exportExcelVista(){
@@ -1729,12 +973,15 @@ function exportExcelZonasCrudo(){
 
 function exportModalDetalleExcel(){
   const title = document.getElementById('modalTitle').textContent || '';
-  const wb = XLSX.utils.book_new();
 
   if (title.startsWith('Detalle: ') && window.currentZone){
-    const ordenes = window.currentZone.ordenes || [];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordenes), `Zona_${window.currentZone.zona||'NA'}`);
-  } else if (title.startsWith('Zonas del CMTS: ')){
+    exportZoneOrdersExcel();
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  if (title.startsWith('Zonas del CMTS: ')){
     const cmts = title.replace('Zonas del CMTS: ','').trim();
     const data = (window.currentCMTSData||[]).find(c=>c.cmts===cmts);
     if (!data) return toast('Sin datos de CMTS');
@@ -1758,12 +1005,40 @@ function exportModalDetalleExcel(){
   XLSX.writeFile(wb, `Detalle_${fecha}.xlsx`);
 }
 
-function debounce(func, wait) {
-  let timeout;
-  return function(...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
-  };
+function exportarOTsZonaDirecto(zoneIdx) {
+  const zonaData = window.currentAnalyzedZones[zoneIdx];
+  if (!zonaData) {
+    toast('❌ No se encontró la zona');
+    return;
+  }
+
+  const ordenesParaExportar = zonaData.ordenesOriginales || zonaData.ordenes;
+
+  if (!ordenesParaExportar || !ordenesParaExportar.length) {
+    toast('⚠️ No hay órdenes para exportar en esta zona');
+    return;
+  }
+
+  const sanitized = ordenesParaExportar.map(order => {
+    const clean = {};
+    Object.keys(order).forEach(key => {
+      if (!key.startsWith('_')) {
+        clean[key] = order[key];
+      }
+    });
+    return clean;
+  });
+
+  const wb = XLSX.utils.book_new();
+  const rawSheetName = zonaData.zona || 'Zona';
+  const sheetName = rawSheetName.toString().slice(0, 28) || 'Zona';
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitized), sheetName);
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  const fileSafeZone = sheetName.replace(/[^A-Za-z0-9_-]/g, '_') || 'Zona';
+  XLSX.writeFile(wb, `OTs_${fileSafeZone}_${fecha}.xlsx`);
+
+  toast(`✅ Exportadas ${sanitized.length} órdenes de ${rawSheetName}`);
 }
 
 console.log('✅ Panel v4.9 MEJORADO inicializado');
@@ -1771,4 +1046,29 @@ console.log('🔥 NUEVAS FUNCIONALIDADES:');
 console.log('   • Ordenamiento de zonas por ingreso (mayor/menor)');
 console.log('   • Filtros de equipos por modelo y marca');
 console.log('   • Exportación filtrada de equipos');
-console.log('📊 Estados activos:', CONFIG.estadosPermitidos);
+console.log('📊 Estados permitidos Estado.1:', CONFIG.estadosPermitidosEstado1);
+console.log('📊 Estados permitidos Estado.2:', CONFIG.estadosPermitidosEstado2);
+
+window.toggleUtilities = toggleUtilities;
+window.openPlanillasNewTab = openPlanillasNewTab;
+window.applyEquiposFilters = applyEquiposFilters;
+window.clearEquiposFilters = clearEquiposFilters;
+window.toggleEquiposGrupo = toggleEquiposGrupo;
+window.exportEquiposGrupoExcel = exportEquiposGrupoExcel;
+window.clearFilters = clearFilters;
+window.switchTab = switchTab;
+window.showAlarmaInfo = showAlarmaInfo;
+window.closeAlarmaModal = closeAlarmaModal;
+window.showEdificioDetail = showEdificioDetail;
+window.closeEdificioModal = closeEdificioModal;
+window.openModal = openModal;
+window.openCMTSDetail = openCMTSDetail;
+window.closeModal = closeModal;
+window.applyModalFilters = applyModalFilters;
+window.toggleSelectAll = toggleSelectAll;
+window.exportBEFAN = exportBEFAN;
+window.exportZoneOrdersExcel = exportZoneOrdersExcel;
+window.exportExcelVista = exportExcelVista;
+window.exportExcelZonasCrudo = exportExcelZonasCrudo;
+window.exportModalDetalleExcel = exportModalDetalleExcel;
+window.exportarOTsZonaDirecto = exportarOTsZonaDirecto;
