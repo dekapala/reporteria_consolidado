@@ -1,8 +1,8 @@
 console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por ingresos');
 
 const CONFIG = { 
-  defaultDays: 3, 
-  codigo_befan: 'FR461',
+  codigo_befan: 'FR461',          // si lo usás
+  defaultDays: 3,                 // si lo usás
   estadosPermitidos: [
     'NUEVA',
     'EN PROGRESO',
@@ -11,7 +11,7 @@ const CONFIG = {
     'PENDIENTE DE CONTACTO',
     'EN ESPERA DE EJECUCION'
   ],
-  estadosOcultosPorDefecto: ['CANCELADA','CERRADA']
+  estadosOcultosPorDefecto: ['CANCELADA', 'CERRADA']
 };
 
 const FMS_TIPOS = {
