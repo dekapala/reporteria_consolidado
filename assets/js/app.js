@@ -48,18 +48,9 @@ const Filters = {
     return rows.filter(r => {
       const meta = r.__meta || {};
 
-
-    return rows.filter(r => {
-      const meta = r.__meta || {};
-
       if (meta.daysFromToday > this.days) return false;
 
       if (!this.showAllStates && !meta.estadoValido) return false;
-      if (!this.showAllStates) {
-        if (!meta.estado || !meta.estadoValido) return false;
-        if (CONFIG.estadosOcultosPorDefecto.includes(meta.estado)) return false;
-        if (!CONFIG.estadosPermitidos.includes(meta.estado)) return false;
-      }
 
       if (this.catec && !meta.tipoTrabajo.includes('CATEC')) return false;
       if (this.ftth && !meta.esFTTH) return false;
