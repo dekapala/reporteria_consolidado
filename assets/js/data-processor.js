@@ -273,6 +273,9 @@ class DataProcessor {
       const estado1Valido = CONFIG.estadosPermitidosEstado1.includes(estado1Raw);
       const estado2Valido = CONFIG.estadosPermitidosEstado2.includes(estado2Raw);
       meta.estadoValido = estado1Valido && estado2Valido;
+      const estadoRaw = (row['Estado.1'] || row['Estado'] || row['Estado.2'] || '').toString().toUpperCase().trim();
+      meta.estado = estadoRaw;
+      meta.estadoValido = estadoRaw && (!CONFIG.estadosOcultosPorDefecto.includes(estadoRaw));
 
       const {zonaPrincipal, tipo} = this.getZonaPrincipal(row);
       meta.zonaPrincipal = zonaPrincipal;

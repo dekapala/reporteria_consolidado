@@ -11,6 +11,13 @@ document.addEventListener('click', (e) => {
   }
 });
 
+function openPlanillasNewTab() {
+  document.getElementById('utilitiesMenu').classList.remove('show');
+  window.open('about:blank', '_blank');
+  toast('📋 Abre la funcionalidad de Planillas en otra pestaña');
+}
+
+
 // Filtros MEJORADOS con ordenamiento
 const Filters = {
   catec: false,
@@ -36,9 +43,18 @@ const Filters = {
     return rows.filter(r => {
       const meta = r.__meta || {};
 
+
+    return rows.filter(r => {
+      const meta = r.__meta || {};
+
       if (meta.daysFromToday > this.days) return false;
 
       if (!this.showAllStates && !meta.estadoValido) return false;
+      if (!this.showAllStates) {
+        if (!meta.estado || !meta.estadoValido) return false;
+        if (CONFIG.estadosOcultosPorDefecto.includes(meta.estado)) return false;
+        if (!CONFIG.estadosPermitidos.includes(meta.estado)) return false;
+      }
 
       if (this.catec && !meta.tipoTrabajo.includes('CATEC')) return false;
       if (this.ftth && !meta.esFTTH) return false;
@@ -639,6 +655,19 @@ function closeModal() {
   }
   setZoneModalFooter();
   updateSelectionInfo();
+  document.getElementById('modalFilters').style.display = 'flex';
+  document.getElementById('modalFooter').innerHTML = `
+    <div class="selection-info" id="selectionInfo">0 órdenes seleccionadas</div>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-primary" onclick="exportModalDetalleExcel()">
+        📥 Exportar detalle
+      </button>
+      <button class="btn btn-warning" id="btnExportBEFAN" disabled onclick="exportBEFAN()">
+        📤 Exportar BEFAN (TXT)
+      </button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+    </div>
+  `;
 }
 
 function applyModalFilters() {
@@ -1043,6 +1072,7 @@ console.log('   • Filtros de equipos por modelo y marca');
 console.log('   • Exportación filtrada de equipos');
 console.log('📊 Estados permitidos Estado.1:', CONFIG.estadosPermitidosEstado1);
 console.log('📊 Estados permitidos Estado.2:', CONFIG.estadosPermitidosEstado2);
+console.log('📊 Estados activos:', CONFIG.estadosPermitidos);
 
 window.toggleUtilities = toggleUtilities;
 window.openPlanillasNewTab = openPlanillasNewTab;
