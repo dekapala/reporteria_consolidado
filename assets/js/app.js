@@ -1,29 +1,20 @@
-1  function toggleUtilities() {
-2    const menu = document.getElementById('utilitiesMenu');
-3    if (!menu) {
-4      console.warn('No se encontró el menú de utilidades para alternar');
-5      return;
-6    }
-7    menu.classList.toggle('show');
-8  }
-9
-10 document.addEventListener('click', (e) => {
-11   const dropdown = document.querySelector('.utilities-dropdown');
-12   const menu = document.getElementById('utilitiesMenu');
-13   if (!menu) return;
-14   if (dropdown && !dropdown.contains(e.target)) {
-15     menu.classList.remove('show');
-16   }
-17 });
-18
-19 // ← Aquí estaban las 5 líneas eliminadas
-20
-21 // Filtros MEJORADOS con ordenamiento
-22 const Filters = {
-23   catec: false,
-24   ...
+function toggleUtilities() {
+  const menu = document.getElementById('utilitiesMenu');
+  if (!menu) {
+    console.warn('No se encontró el menú de utilidades para alternar');
+    return;
+  }
+  menu.classList.toggle('show');
+}
 
-
+document.addEventListener('click', (e) => {
+  const dropdown = document.querySelector('.utilities-dropdown');
+  const menu = document.getElementById('utilitiesMenu');
+  if (!menu) return;
+  if (dropdown && !dropdown.contains(e.target)) {
+    menu.classList.remove('show');
+  }
+});
 
 // Filtros MEJORADOS con ordenamiento
 const Filters = {
@@ -38,7 +29,7 @@ const Filters = {
   alarma: '',
   quickSearch: '',
   showAllStates: false,
-  ordenarPorIngreso: 'desc', // 'desc', 'asc', o ''
+  ordenarPorIngreso: 'desc',
   equipoModelo: '',
   equipoMarca: '',
 
@@ -97,7 +88,6 @@ const Filters = {
       }
     }
 
-    // NUEVO: Aplicar ordenamiento por ingreso
     if (this.ordenarPorIngreso === 'desc') {
       filtered.sort((a, b) => b.totalOTs - a.totalOTs);
     } else if (this.ordenarPorIngreso === 'asc') {
@@ -107,8 +97,6 @@ const Filters = {
     return filtered;
   }
 };
-
-
 
 function applyEquiposFilters() {
   Filters.equipoModelo = document.getElementById('filterEquipoModelo').value;
@@ -1070,7 +1058,7 @@ console.log('   • Filtros de equipos por modelo y marca');
 console.log('   • Exportación filtrada de equipos');
 console.log('📊 Estados permitidos Estado.1:', CONFIG.estadosPermitidosEstado1);
 console.log('📊 Estados permitidos Estado.2:', CONFIG.estadosPermitidosEstado2);
-
+console.log('📊 Estados ocultos:', CONFIG.estadosOcultosPorDefecto);
 
 window.toggleUtilities = toggleUtilities;
 window.openPlanillasNewTab = openPlanillasNewTab;
