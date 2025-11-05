@@ -49,6 +49,7 @@ const Filters = {
 
       if (meta.daysFromToday > this.days) return false;
 
+      if (!this.showAllStates && !meta.estadoValido) return false;
       if (!this.showAllStates) {
         if (!meta.estado || !meta.estadoValido) return false;
         if (CONFIG.estadosOcultosPorDefecto.includes(meta.estado)) return false;
@@ -384,7 +385,8 @@ function applyFilters() {
   Filters.ordenarPorIngreso = document.getElementById('ordenarPorIngreso').value;
 
   console.log(`✅ Aplicando filtros - Ventana: ${Filters.days} días`);
-  console.log(`📊 Estados activos: ${CONFIG.estadosPermitidos.join(', ')}`);
+  console.log(`📊 Estados permitidos Estado.1: ${CONFIG.estadosPermitidosEstado1.join(', ')}`);
+  console.log(`📊 Estados permitidos Estado.2: ${CONFIG.estadosPermitidosEstado2.join(', ')}`);
   console.log(`🔥 Ordenamiento: ${Filters.ordenarPorIngreso || 'Por score'}`);
 
   const filtered = Filters.apply(currentData.ordenes);
@@ -1068,6 +1070,8 @@ console.log('🔥 NUEVAS FUNCIONALIDADES:');
 console.log('   • Ordenamiento de zonas por ingreso (mayor/menor)');
 console.log('   • Filtros de equipos por modelo y marca');
 console.log('   • Exportación filtrada de equipos');
+console.log('📊 Estados permitidos Estado.1:', CONFIG.estadosPermitidosEstado1);
+console.log('📊 Estados permitidos Estado.2:', CONFIG.estadosPermitidosEstado2);
 console.log('📊 Estados activos:', CONFIG.estadosPermitidos);
 
 window.toggleUtilities = toggleUtilities;

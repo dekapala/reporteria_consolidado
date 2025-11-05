@@ -4,6 +4,20 @@ console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por in
   const CONFIG = {
     defaultDays: 3,
     codigo_befan: 'FR461',
+    estadosPermitidosEstado1: [
+      'DERIVADA',
+      'EN ESPERA DE EJECUCION',
+      'NUEVA',
+      'PENDIENTE DE CONTACTO',
+      'PENDIENTE EVENTO MASIVO',
+      ''
+    ],
+    estadosPermitidosEstado2: [
+      'CERRADA',
+      'EN PROGRESO',
+      'NUEVA',
+      'PENDIENTE DE ACCION',
+      'PROGRAMADA'
     estadosPermitidos: [
       'NUEVA',
       'EN PROGRESO',
