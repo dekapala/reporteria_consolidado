@@ -1,3 +1,5 @@
+console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por ingresos');
+
 (function(){
   const CONFIG = {
     defaultDays: 3,
