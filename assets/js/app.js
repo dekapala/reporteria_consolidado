@@ -1,11 +1,16 @@
 function toggleUtilities() {
   const menu = document.getElementById('utilitiesMenu');
+  if (!menu) {
+    console.warn('No se encontró el menú de utilidades para alternar');
+    return;
+  }
   menu.classList.toggle('show');
 }
 
 document.addEventListener('click', (e) => {
   const dropdown = document.querySelector('.utilities-dropdown');
   const menu = document.getElementById('utilitiesMenu');
+  if (!menu) return;
   if (dropdown && !dropdown.contains(e.target)) {
     menu.classList.remove('show');
   }
