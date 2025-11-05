@@ -43,6 +43,10 @@ const Filters = {
     return rows.filter(r => {
       const meta = r.__meta || {};
 
+
+    return rows.filter(r => {
+      const meta = r.__meta || {};
+
       if (meta.daysFromToday > this.days) return false;
 
       if (!this.showAllStates) {
@@ -1023,6 +1027,42 @@ function exportModalDetalleExcel(){
   XLSX.writeFile(wb, `Detalle_${fecha}.xlsx`);
 }
 
+function exportarOTsZonaDirecto(zoneIdx) {
+  const zonaData = window.currentAnalyzedZones[zoneIdx];
+  if (!zonaData) {
+    toast('❌ No se encontró la zona');
+    return;
+  }
+
+  const ordenesParaExportar = zonaData.ordenesOriginales || zonaData.ordenes;
+
+  if (!ordenesParaExportar || !ordenesParaExportar.length) {
+    toast('⚠️ No hay órdenes para exportar en esta zona');
+    return;
+  }
+
+  const sanitized = ordenesParaExportar.map(order => {
+    const clean = {};
+    Object.keys(order).forEach(key => {
+      if (!key.startsWith('_')) {
+        clean[key] = order[key];
+      }
+    });
+    return clean;
+  });
+
+  const wb = XLSX.utils.book_new();
+  const rawSheetName = zonaData.zona || 'Zona';
+  const sheetName = rawSheetName.toString().slice(0, 28) || 'Zona';
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitized), sheetName);
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  const fileSafeZone = sheetName.replace(/[^A-Za-z0-9_-]/g, '_') || 'Zona';
+  XLSX.writeFile(wb, `OTs_${fileSafeZone}_${fecha}.xlsx`);
+
+  toast(`✅ Exportadas ${sanitized.length} órdenes de ${rawSheetName}`);
+}
+
 console.log('✅ Panel v4.9 MEJORADO inicializado');
 console.log('🔥 NUEVAS FUNCIONALIDADES:');
 console.log('   • Ordenamiento de zonas por ingreso (mayor/menor)');
@@ -1052,3 +1092,4 @@ window.exportZoneOrdersExcel = exportZoneOrdersExcel;
 window.exportExcelVista = exportExcelVista;
 window.exportExcelZonasCrudo = exportExcelZonasCrudo;
 window.exportModalDetalleExcel = exportModalDetalleExcel;
+window.exportarOTsZonaDirecto = exportarOTsZonaDirecto;

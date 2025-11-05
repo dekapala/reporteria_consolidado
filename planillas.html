@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Herramientas de Planillas</title>
+  <link rel="stylesheet" href="assets/css/styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body {
+      background: #0f172a;
+      color: #f1f5f9;
+    }
+    .planillas-wrapper {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 16px 80px;
+    }
+    .planillas-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .planillas-header h1 {
+      font-size: 2.25rem;
+      margin: 0;
+      color: #38bdf8;
+    }
+    .planillas-header p {
+      margin: 4px 0 0 0;
+      color: #cbd5f5;
+      font-size: 0.95rem;
+      max-width: 520px;
+    }
+    .planillas-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .planillas-section {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 18px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 15px 35px rgba(15, 23, 42, 0.45);
+    }
+    .planillas-section h2 {
+      margin-top: 0;
+      color: #f8fafc;
+    }
+    .template-card {
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      background: rgba(30, 41, 59, 0.9);
+    }
+    .template-card h3 {
+      margin: 0 0 4px 0;
+      color: #bae6fd;
+    }
+    .template-meta {
+      font-size: 0.85rem;
+      color: #cbd5f5;
+      margin-bottom: 8px;
+    }
+    .template-columns span {
+      display: inline-block;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #38bdf8;
+      padding: 4px 10px;
+      border-radius: 999px;
+      margin: 4px 6px 0 0;
+      font-size: 0.75rem;
+      letter-spacing: 0.01em;
+    }
+    .btn-secondary-light {
+      background: transparent;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      color: #e2e8f0;
+      padding: 10px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+    .btn-secondary-light:hover {
+      background: rgba(148, 163, 184, 0.18);
+    }
+    .btn-primary-gradient {
+      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      border: none;
+      color: #0f172a;
+      padding: 12px 20px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      box-shadow: 0 12px 25px rgba(99, 102, 241, 0.45);
+      transition: transform 0.2s ease;
+    }
+    .btn-primary-gradient:hover {
+      transform: translateY(-1px);
+    }
+    .notes-list {
+      list-style: none;
+      padding: 0;
+      margin: 12px 0 0 0;
+    }
+    .notes-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 10px;
+    }
+    .notes-list button {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+      border-radius: 8px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .notes-list button:hover {
+      background: rgba(239, 68, 68, 0.25);
+    }
+    .footer-note {
+      margin-top: 40px;
+      font-size: 0.8rem;
+      color: rgba(226, 232, 240, 0.65);
+      text-align: center;
+    }
+    @media (max-width: 640px) {
+      .planillas-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .planillas-header h1 {
+        font-size: 1.9rem;
+      }
+      .planillas-actions {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="planillas-wrapper">
+    <header class="planillas-header">
+      <div>
+        <h1>📋 Herramientas de Planillas</h1>
+        <p>Gestiona tus plantillas operativas y descarga formatos base listos para compartir con los técnicos.</p>
+        <p id="fechaActual"></p>
+      </div>
+      <div class="planillas-actions">
+        <a class="btn-secondary-light" href="index.html">⬅️ Volver al panel</a>
+        <button class="btn-primary-gradient" id="btnDescargarPlanilla">⬇️ Descargar Excel con plantillas</button>
+      </div>
+    </header>
+
+    <section class="planillas-section">
+      <h2>Plantillas sugeridas</h2>
+      <p>Se generan tres hojas con columnas estandarizadas para compartir con los equipos de campo.</p>
+      <div id="templatesList"></div>
+      <p id="lastGenerated" class="template-meta"></p>
+    </section>
+
+    <section class="planillas-section">
+      <h2>Notas rápidas</h2>
+      <p>Guarda recordatorios que quieras revisar cuando prepares las planillas del día.</p>
+      <form id="notesForm">
+        <div style="display:flex; gap:12px; flex-wrap: wrap;">
+          <input id="noteText" type="text" placeholder="Ej. recordar OT pendientes en San Isidro" required style="flex:1; min-width: 240px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.4); background: rgba(15, 23, 42, 0.9); color: #f8fafc;">
+          <button class="btn-primary-gradient" type="submit">Agregar nota</button>
+        </div>
+      </form>
+      <ul id="notesList" class="notes-list"></ul>
+    </section>
+
+    <section class="planillas-section">
+      <h2>Compartir acceso</h2>
+      <p>Envía este enlace a tu equipo para que puedan descargar las plantillas actualizadas:</p>
+      <div style="display:flex; gap:12px; flex-wrap: wrap; align-items:center;">
+        <input id="shareLink" type="text" readonly style="flex:1; min-width: 240px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.4); background: rgba(15, 23, 42, 0.9); color: #f8fafc;">
+        <button class="btn-secondary-light" id="btnCopyLink">Copiar enlace</button>
+      </div>
+    </section>
+
+    <p class="footer-note">Panel Fulfillment v4.9 MEJORADO · Herramientas de soporte operativo</p>
+  </div>
+
+  <script src="assets/js/utils.js"></script>
+  <script src="assets/js/planillas.js"></script>
+</body>
+</html>

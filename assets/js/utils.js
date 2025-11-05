@@ -168,6 +168,12 @@ console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por in
     };
   }
 
+  function openPlanillasNewTab() {
+    document.getElementById('utilitiesMenu').classList.remove('show');
+    window.open('planillas.html', '_blank');
+    toast('📋 Abriendo herramientas de Planillas...');
+  }
+
   window.CONFIG = CONFIG;
   window.FMS_TIPOS = FMS_TIPOS;
   window.stripAccents = stripAccents;
@@ -177,4 +183,5 @@ console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por in
   window.TextUtils = TextUtils;
   window.toast = toast;
   window.debounce = debounce;
+  window.openPlanillasNewTab = openPlanillasNewTab;
 })();
