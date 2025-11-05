@@ -11,6 +11,13 @@ document.addEventListener('click', (e) => {
   }
 });
 
+function openPlanillasNewTab() {
+  document.getElementById('utilitiesMenu').classList.remove('show');
+  window.open('about:blank', '_blank');
+  toast('📋 Abre la funcionalidad de Planillas en otra pestaña');
+}
+
+
 // Filtros MEJORADOS con ordenamiento
 const Filters = {
   catec: false,
@@ -32,6 +39,10 @@ const Filters = {
     const queries = this.quickSearch
       ? this.quickSearch.split(';').map(q => q.trim()).filter(Boolean)
       : [];
+
+    return rows.filter(r => {
+      const meta = r.__meta || {};
+
 
     return rows.filter(r => {
       const meta = r.__meta || {};
@@ -642,6 +653,19 @@ function closeModal() {
   }
   setZoneModalFooter();
   updateSelectionInfo();
+  document.getElementById('modalFilters').style.display = 'flex';
+  document.getElementById('modalFooter').innerHTML = `
+    <div class="selection-info" id="selectionInfo">0 órdenes seleccionadas</div>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-primary" onclick="exportModalDetalleExcel()">
+        📥 Exportar detalle
+      </button>
+      <button class="btn btn-warning" id="btnExportBEFAN" disabled onclick="exportBEFAN()">
+        📤 Exportar BEFAN (TXT)
+      </button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+    </div>
+  `;
 }
 
 function applyModalFilters() {
