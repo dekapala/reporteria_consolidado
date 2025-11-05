@@ -78,6 +78,7 @@ const UIRenderer = {
           <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openModal(${idx})">👁️ Ver</button>
           <button class="btn btn-success" style="padding: 6px 12px; font-size: 0.75rem; margin-left: 4px;" onclick="exportarOTsZonaDirecto(${idx})">📥 Exportar</button>
         </td>
+        <td><button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openModal(${idx})">👁️ Ver</button></td>
       </tr>`;
     });
 

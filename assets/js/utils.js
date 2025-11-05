@@ -18,6 +18,13 @@ console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por in
       'NUEVA',
       'PENDIENTE DE ACCION',
       'PROGRAMADA'
+    estadosPermitidos: [
+      'NUEVA',
+      'EN PROGRESO',
+      'PENDIENTE DE ACCION',
+      'PROGRAMADA',
+      'PENDIENTE DE CONTACTO',
+      'EN ESPERA DE EJECUCION'
     ],
     estadosOcultosPorDefecto: ['CANCELADA','CERRADA']
   };
@@ -176,10 +183,7 @@ console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por in
   }
 
   function openPlanillasNewTab() {
-    const menu = document.getElementById('utilitiesMenu');
-    if (menu) {
-      menu.classList.remove('show');
-    }
+    document.getElementById('utilitiesMenu').classList.remove('show');
     window.open('planillas.html', '_blank');
     toast('📋 Abriendo herramientas de Planillas...');
   }
