@@ -749,82 +749,121 @@ const UIRenderer = {
     return svg;
   },
   
-  renderZonas(zones) {
-    if (!zones.length) return '<div class="loading-message"><p>No hay zonas para mostrar</p></div>';
-    
-    let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
-    html += '<th>Zona</th><th>Tipo</th><th>Red</th><th>CMTS</th><th>Nodo</th>';
-    html += '<th>Alarma</th><th>Gráfico 7 Días</th>';
-    html += '<th class="number">Total</th><th class="number">N</th><th class="number">N-1</th>';
-    html += '<th>Acción</th>';
-    html += '</tr></thead><tbody>';
-    
-    zones.slice(0, 200).forEach((z, idx) => {
-      const badgeTipo = z.tipo === 'FTTH' ? '<span class="badge badge-ftth">FTTH</span>' : '<span class="badge badge-hfc">HFC</span>';
-      const red = z.tipo === 'FTTH' ? z.zonaHFC : '-';
-      
-      let badgeNodo = '<span class="badge">Sin datos</span>';
-      if (z.nodoEstado === 'up') {
-        badgeNodo = `<span class="badge badge-up">✓ UP (${z.nodoUp})</span>`;
-      } else if (z.nodoEstado === 'critical') {
-        badgeNodo = `<span class="badge badge-critical">⚠ CRÍTICO (↓${z.nodoDown})</span>`;
-      } else if (z.nodoEstado === 'down') {
-        badgeNodo = `<span class="badge badge-down">↓ DOWN (${z.nodoDown})</span>`;
-      }
-      
-      let badgeAlarma = '<span class="badge">Sin alarma</span>';
-      if (z.tieneAlarma) {
-        badgeAlarma = `<span class="badge badge-alarma badge-alarma-activa" onclick="showAlarmaInfo(${idx})">🚨 ${z.alarmasActivas} Activa(s)</span>`;
-      }
-      
-      const cmtsShort = z.cmts ? z.cmts.substring(0, 15) + (z.cmts.length > 15 ? '...' : '') : '-';
-      const sparkline = this.renderSparkline(z.last7DaysCounts, z.last7Days);
-      
-      html += `<tr>
-        <td><strong>${z.zona}</strong></td>
-        <td>${badgeTipo}</td>
-        <td>${red}</td>
-        <td title="${z.cmts}">${cmtsShort}</td>
-        <td>${badgeNodo}</td>
-        <td>${badgeAlarma}</td>
-        <td>${sparkline}</td>
-        <td class="number">${z.totalOTs}</td>
-        <td class="number">${z.ingresoN}</td>
-        <td class="number">${z.ingresoN1}</td>
-        <td><button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openModal(${idx})">👁️ Ver</button></td>
-      </tr>`;
-    });
-    
-    html += '</tbody></table></div></div>';
-    return html;
-  },
+renderZonas(zones) {
+  if (!zones.length) return '<div class="loading-message"><p>No hay zonas para mostrar</p></div>';
   
-  renderCMTS(cmtsData) {
-    if (!cmtsData.length) return '<div class="loading-message"><p>No hay datos de CMTS para mostrar</p></div>';
+  let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+  html += '<th>Zona</th><th>Tipo</th><th>Red</th><th>CMTS</th><th>Nodo</th>';
+  html += '<th>Alarma</th><th>Gráfico 7 Días</th>';
+  html += '<th class="number">Total</th><th class="number">N</th><th class="number">N-1</th>';
+  html += '<th>Acción</th>';
+  html += '</tr></thead><tbody>';
+  
+  zones.slice(0, 200).forEach((z, idx) => {
+    const badgeTipo = z.tipo === 'FTTH'
+      ? '<span class="badge badge-ftth">FTTH</span>'
+      : '<span class="badge badge-hfc">HFC</span>';
+    const red = z.tipo === 'FTTH' ? z.zonaHFC : '-';
     
-    let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
-    html += '<th>CMTS</th><th class="number">Zonas</th><th class="number">Total OTs</th>';
-    html += '<th class="number">Zonas UP</th><th class="number">Zonas DOWN</th><th class="number">Zonas Críticas</th>';
-    html += '<th>Acción</th>';
-    html += '</tr></thead><tbody>';
+    let badgeNodo = '<span class="badge">Sin datos</span>';
+    if (z.nodoEstado === 'up') {
+      badgeNodo = `<span class="badge badge-up">✓ UP (${z.nodoUp})</span>`;
+    } else if (z.nodoEstado === 'critical') {
+      badgeNodo = `<span class="badge badge-critical">⚠ CRÍTICO (↓${z.nodoDown})</span>`;
+    } else if (z.nodoEstado === 'down') {
+      badgeNodo = `<span class="badge badge-down">↓ DOWN (${z.nodoDown})</span>`;
+    }
     
-    cmtsData.forEach((c, idx) => {
-      const cmtsShort = c.cmts.substring(0, 30) + (c.cmts.length > 30 ? '...' : '');
-      
-      html += `<tr>
-        <td title="${c.cmts}"><strong>${cmtsShort}</strong></td>
-        <td class="number">${c.zonas.length}</td>
-        <td class="number">${c.totalOTs}</td>
-        <td class="number">${c.zonasUp}</td>
-        <td class="number">${c.zonasDown}</td>
-        <td class="number">${c.zonasCriticas}</td>
-        <td><button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openCMTSDetail('${c.cmts.replace(/'/g, "\\'")}')">👁️ Ver Zonas</button></td>
-      </tr>`;
-    });
+    let badgeAlarma = '<span class="badge">Sin alarma</span>';
+    if (z.tieneAlarma) {
+      badgeAlarma = `<span class="badge badge-alarma badge-alarma-activa" onclick="showAlarmaInfo(${idx})">🚨 ${z.alarmasActivas} Activa(s)</span>`;
+    }
     
-    html += '</tbody></table></div></div>';
-    return html;
-  },
+    const cmtsShort = z.cmts
+      ? z.cmts.substring(0, 15) + (z.cmts.length > 15 ? '...' : '')
+      : '-';
+    const sparkline = this.renderSparkline(z.last7DaysCounts, z.last7Days);
+    
+    html += `<tr>
+      <td><strong>${z.zona}</strong></td>
+      <td>${badgeTipo}</td>
+      <td>${red}</td>
+      <td title="${z.cmts}">${cmtsShort}</td>
+      <td>${badgeNodo}</td>
+      <td>${badgeAlarma}</td>
+      <td>${sparkline}</td>
+      <td class="number">${z.totalOTs}</td>
+      <td class="number">${z.ingresoN}</td>
+      <td class="number">${z.ingresoN1}</td>
+      <td>
+        <div style="display:flex; gap:4px;">
+          <button
+            class="btn btn-primary"
+            style="padding: 6px 12px; font-size: 0.75rem;"
+            onclick="openModal(${idx})"
+          >
+            👁️ Ver
+          </button>
+          <button
+            class="btn btn-secondary"
+            style="padding: 6px 12px; font-size: 0.75rem;"
+            onclick="event.stopPropagation(); exportZonaExcel(${idx})"
+          >
+            📥 Excel
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  });
+  
+  html += '</tbody></table></div></div>';
+  return html;
+},
+
+renderCMTS(cmtsData) {
+  if (!cmtsData.length) return '<div class="loading-message"><p>No hay datos de CMTS para mostrar</p></div>';
+  
+  let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+  html += '<th>CMTS</th><th class="number">Zonas</th><th class="number">Total OTs</th>';
+  html += '<th class="number">Zonas UP</th><th class="number">Zonas DOWN</th><th class="number">Zonas Críticas</th>';
+  html += '<th>Acción</th>';
+  html += '</tr></thead><tbody>';
+  
+  cmtsData.forEach((c, idx) => {
+    const cmtsShort = c.cmts.substring(0, 30) + (c.cmts.length > 30 ? '...' : '');
+    
+    html += `<tr>
+      <td title="${c.cmts}"><strong>${cmtsShort}</strong></td>
+      <td class="number">${c.zonas.length}</td>
+      <td class="number">${c.totalOTs}</td>
+      <td class="number">${c.zonasUp}</td>
+      <td class="number">${c.zonasDown}</td>
+      <td class="number">${c.zonasCriticas}</td>
+      <td>
+        <div style="display:flex; gap:4px;">
+          <button
+            class="btn btn-primary"
+            style="padding: 6px 12px; font-size: 0.75rem;"
+            onclick="openCMTSDetail('${c.cmts.replace(/'/g, "\\'")}')"
+          >
+            👁️ Ver Zonas
+          </button>
+          <button
+            class="btn btn-secondary"
+            style="padding: 6px 12px; font-size: 0.75rem;"
+            onclick="event.stopPropagation(); exportCMTSExcel('${c.cmts.replace(/'/g, "\\'")}')"
+          >
+            📥 Excel
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  });
+  
+  html += '</tbody></table></div></div>';
+  return html;
+},
+
   
   renderEdificios(ordenes) {
     const edificios = new Map();
