@@ -1,8 +1,8 @@
 console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por ingresos');
 
 const CONFIG = { 
-  codigo_befan: 'FR461',          // si lo usás
-  defaultDays: 3,                 // si lo usás
+  codigo_befan: 'FR461',
+  defaultDays: 3,
   estadosPermitidos: [
     'NUEVA',
     'EN PROGRESO',
@@ -166,8 +166,124 @@ document.addEventListener('click', (e) => {
 
 function openPlanillasNewTab() {
   document.getElementById('utilitiesMenu').classList.remove('show');
-  window.open('about:blank', '_blank');
-  toast('📋 Abre la funcionalidad de Planillas en otra pestaña');
+  
+  const newWindow = window.open('', '_blank', 'width=1000,height=800');
+  
+  const planillasHTML = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📋 Planillas - Panel Fulfillment</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #F3F3F3;
+      padding: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+    }
+    h1 {
+      color: #0078D4;
+      margin-bottom: 30px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    select, textarea {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #E1DFDD;
+      border-radius: 8px;
+    }
+    textarea {
+      min-height: 100px;
+      font-family: 'Courier New', monospace;
+    }
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    .btn-primary { background: #0078D4; color: white; }
+    .btn-success { background: #107C10; color: white; }
+    .output {
+      background: #FAFAFA;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 20px;
+      font-family: 'Courier New', monospace;
+      white-space: pre-wrap;
+      display: none;
+    }
+    .output.show { display: block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📋 Generador de Planillas Técnicas</h1>
+    <div class="form-group">
+      <label>Tipo de Planilla</label>
+      <select id="tipo" onchange="updateForm()">
+        <option value="">Selecciona...</option>
+        <option value="niveles">Niveles Fuera de Rango</option>
+        <option value="sinSenal">Sin Señal</option>
+        <option value="ruido">Ruido en Red</option>
+      </select>
+    </div>
+    <div id="campos"></div>
+    <button class="btn btn-primary" onclick="generar()">🔧 Generar</button>
+    <button class="btn btn-success" onclick="copiar()">📋 Copiar</button>
+    <div class="output" id="output"></div>
+  </div>
+  <script>
+    function updateForm() {
+      const tipo = document.getElementById('tipo').value;
+      const container = document.getElementById('campos');
+      if (!tipo) { container.innerHTML = ''; return; }
+      container.innerHTML = '<div class="form-group"><label>Observaciones</label><textarea id="obs"></textarea></div>';
+    }
+    function generar() {
+      const tipo = document.getElementById('tipo').value;
+      if (!tipo) return alert('Selecciona un tipo');
+      const obs = document.getElementById('obs')?.value || '';
+      const output = document.getElementById('output');
+      output.textContent = \`REPORTE TÉCNICO
+Fecha: \${new Date().toLocaleDateString()}
+Tipo: \${tipo.toUpperCase()}
+
+Observaciones:
+\${obs}
+
+Generado desde Panel Fulfillment v4.9\`;
+      output.classList.add('show');
+    }
+    function copiar() {
+      const text = document.getElementById('output').textContent;
+      if (!text) return alert('Genera primero una planilla');
+      navigator.clipboard.writeText(text).then(() => alert('✓ Copiado'));
+    }
+  </script>
+</body>
+</html>`;
+
+  newWindow.document.write(planillasHTML);
+  newWindow.document.close();
 }
 
 class DataProcessor {
@@ -233,18 +349,6 @@ class DataProcessor {
       });
       
       console.log(`✅ Archivo tipo ${tipo}: ${jsonData.length} registros`);
-      console.log(`📋 Primeras 10 columnas:`, jsonData.length > 0 ? Object.keys(jsonData[0]).slice(0, 10) : []);
-      
-      if (jsonData.length > 0) {
-        const zonaCols = Object.keys(jsonData[0]).filter(k => k.toLowerCase().includes('zona'));
-        if (zonaCols.length > 0) {
-          console.log(`✅ Columnas de ZONA encontradas:`, zonaCols);
-          zonaCols.forEach(col => {
-            const ejemplo = jsonData[0][col];
-            console.log(`   "${col}" = "${ejemplo}"`);
-          });
-        }
-      }
       
       if (tipo === 1) this.consolidado1 = jsonData;
       else if (tipo === 2) this.consolidado2 = jsonData;
@@ -596,8 +700,9 @@ const Filters = {
   quickSearch: '',
   showAllStates: false,
   ordenarPorIngreso: 'desc',
-  equipoModelo: '',
+  equipoModelo: [],
   equipoMarca: '',
+  equipoTerritorio: '',
   criticidad: '',
   
   apply(rows) {
@@ -686,8 +791,8 @@ const Filters = {
   applyToZones(zones) {
     let filtered = zones.slice();
 
-        if (this.criticidad === 'critico') {
-      filtered = filtered.filter(z => z.criticidad === 'CRITICO');
+    if (this.criticidad === 'critico') {
+      filtered = filtered.filter(z => z.criticidad === 'CRÍTICO');
     }
     
     if (this.nodoEstado) {
@@ -722,46 +827,34 @@ const Filters = {
 };
 
 const UIRenderer = {
-renderStats(data) {
-  return `
-    <div class="stat-card clickable" style="cursor:pointer"
-         onclick="filterByStat('total')">
-      <div class="stat-label">Total Órdenes</div>
-      <div class="stat-value">${NumberUtils.format(data.total)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer"
-         onclick="filterByStat('zonas')">
-      <div class="stat-label">Zonas Analizadas</div>
-      <div class="stat-value">${NumberUtils.format(data.zonas)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer"
-         onclick="filterByStat('criticas')">
-      <div class="stat-label">Zonas Críticas</div>
-      <div class="stat-value">${NumberUtils.format(data.criticas)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer"
-         onclick="filterByStat('ftth')">
-      <div class="stat-label">Zonas FTTH</div>
-      <div class="stat-value">${NumberUtils.format(data.ftth)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer"
-         onclick="filterByStat('alarmas')">
-      <div class="stat-label">Con Alarmas</div>
-      <div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer"
-         onclick="filterByStat('nodosCriticos')">
-      <div class="stat-label">Nodos Críticos</div>
-      <div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div>
-    </div>
-  `;
-},
-
+  renderStats(data) {
+    return `
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('total')">
+        <div class="stat-label">Total Órdenes</div>
+        <div class="stat-value">${NumberUtils.format(data.total)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('zonas')">
+        <div class="stat-label">Zonas Analizadas</div>
+        <div class="stat-value">${NumberUtils.format(data.zonas)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('criticas')">
+        <div class="stat-label">Zonas Críticas</div>
+        <div class="stat-value">${NumberUtils.format(data.criticas)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('ftth')">
+        <div class="stat-label">Zonas FTTH</div>
+        <div class="stat-value">${NumberUtils.format(data.ftth)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('alarmas')">
+        <div class="stat-label">Con Alarmas</div>
+        <div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('nodosCriticos')">
+        <div class="stat-label">Nodos Críticos</div>
+        <div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div>
+      </div>
+    `;
+  },
   
   renderSparkline(counts, labels) {
     const max = Math.max(...counts, 1);
@@ -784,121 +877,94 @@ renderStats(data) {
     return svg;
   },
   
-renderZonas(zones) {
-  if (!zones.length) return '<div class="loading-message"><p>No hay zonas para mostrar</p></div>';
-  
-  let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
-  html += '<th>Zona</th><th>Tipo</th><th>Red</th><th>CMTS</th><th>Nodo</th>';
-  html += '<th>Alarma</th><th>Gráfico 7 Días</th>';
-  html += '<th class="number">Total</th><th class="number">N</th><th class="number">N-1</th>';
-  html += '<th>Acción</th>';
-  html += '</tr></thead><tbody>';
-  
-  zones.slice(0, 200).forEach((z, idx) => {
-    const badgeTipo = z.tipo === 'FTTH'
-      ? '<span class="badge badge-ftth">FTTH</span>'
-      : '<span class="badge badge-hfc">HFC</span>';
-    const red = z.tipo === 'FTTH' ? z.zonaHFC : '-';
+  renderZonas(zones) {
+    if (!zones.length) return '<div class="loading-message"><p>No hay zonas para mostrar</p></div>';
     
-    let badgeNodo = '<span class="badge">Sin datos</span>';
-    if (z.nodoEstado === 'up') {
-      badgeNodo = `<span class="badge badge-up">✓ UP (${z.nodoUp})</span>`;
-    } else if (z.nodoEstado === 'critical') {
-      badgeNodo = `<span class="badge badge-critical">⚠ CRÍTICO (↓${z.nodoDown})</span>`;
-    } else if (z.nodoEstado === 'down') {
-      badgeNodo = `<span class="badge badge-down">↓ DOWN (${z.nodoDown})</span>`;
-    }
+    let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+    html += '<th>Zona</th><th>Tipo</th><th>Red</th><th>CMTS</th><th>Nodo</th>';
+    html += '<th>Alarma</th><th>Gráfico 7 Días</th>';
+    html += '<th class="number">Total</th><th class="number">N</th><th class="number">N-1</th>';
+    html += '<th>Acción</th>';
+    html += '</tr></thead><tbody>';
     
-    let badgeAlarma = '<span class="badge">Sin alarma</span>';
-    if (z.tieneAlarma) {
-      badgeAlarma = `<span class="badge badge-alarma badge-alarma-activa" onclick="showAlarmaInfo(${idx})">🚨 ${z.alarmasActivas} Activa(s)</span>`;
-    }
+    zones.slice(0, 200).forEach((z, idx) => {
+      const badgeTipo = z.tipo === 'FTTH'
+        ? '<span class="badge badge-ftth">FTTH</span>'
+        : '<span class="badge badge-hfc">HFC</span>';
+      const red = z.tipo === 'FTTH' ? z.zonaHFC : '-';
+      
+      let badgeNodo = '<span class="badge">Sin datos</span>';
+      if (z.nodoEstado === 'up') {
+        badgeNodo = `<span class="badge badge-up">✓ UP (${z.nodoUp})</span>`;
+      } else if (z.nodoEstado === 'critical') {
+        badgeNodo = `<span class="badge badge-critical">⚠ CRÍTICO (↓${z.nodoDown})</span>`;
+      } else if (z.nodoEstado === 'down') {
+        badgeNodo = `<span class="badge badge-down">↓ DOWN (${z.nodoDown})</span>`;
+      }
+      
+      let badgeAlarma = '<span class="badge">Sin alarma</span>';
+      if (z.tieneAlarma) {
+        badgeAlarma = `<span class="badge badge-alarma badge-alarma-activa" onclick="showAlarmaInfo(${idx})">🚨 ${z.alarmasActivas} Activa(s)</span>`;
+      }
+      
+      const cmtsShort = z.cmts ? z.cmts.substring(0, 15) + (z.cmts.length > 15 ? '...' : '') : '-';
+      const sparkline = this.renderSparkline(z.last7DaysCounts, z.last7Days);
+      
+      html += `<tr>
+        <td><strong>${z.zona}</strong></td>
+        <td>${badgeTipo}</td>
+        <td>${red}</td>
+        <td title="${z.cmts}">${cmtsShort}</td>
+        <td>${badgeNodo}</td>
+        <td>${badgeAlarma}</td>
+        <td>${sparkline}</td>
+        <td class="number">${z.totalOTs}</td>
+        <td class="number">${z.ingresoN}</td>
+        <td class="number">${z.ingresoN1}</td>
+        <td>
+          <div style="display:flex; gap:4px;">
+            <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openModal(${idx})">👁️ Ver</button>
+            <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="event.stopPropagation(); exportZonaExcel(${idx})">📥 Excel</button>
+          </div>
+        </td>
+      </tr>`;
+    });
     
-    const cmtsShort = z.cmts
-      ? z.cmts.substring(0, 15) + (z.cmts.length > 15 ? '...' : '')
-      : '-';
-    const sparkline = this.renderSparkline(z.last7DaysCounts, z.last7Days);
-    
-    html += `<tr>
-      <td><strong>${z.zona}</strong></td>
-      <td>${badgeTipo}</td>
-      <td>${red}</td>
-      <td title="${z.cmts}">${cmtsShort}</td>
-      <td>${badgeNodo}</td>
-      <td>${badgeAlarma}</td>
-      <td>${sparkline}</td>
-      <td class="number">${z.totalOTs}</td>
-      <td class="number">${z.ingresoN}</td>
-      <td class="number">${z.ingresoN1}</td>
-      <td>
-        <div style="display:flex; gap:4px;">
-          <button
-            class="btn btn-primary"
-            style="padding: 6px 12px; font-size: 0.75rem;"
-            onclick="openModal(${idx})"
-          >
-            👁️ Ver
-          </button>
-          <button
-            class="btn btn-secondary"
-            style="padding: 6px 12px; font-size: 0.75rem;"
-            onclick="event.stopPropagation(); exportZonaExcel(${idx})"
-          >
-            📥 Excel
-          </button>
-        </div>
-      </td>
-    </tr>`;
-  });
-  
-  html += '</tbody></table></div></div>';
-  return html;
-},
+    html += '</tbody></table></div></div>';
+    return html;
+  },
 
-renderCMTS(cmtsData) {
-  if (!cmtsData.length) return '<div class="loading-message"><p>No hay datos de CMTS para mostrar</p></div>';
-  
-  let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
-  html += '<th>CMTS</th><th class="number">Zonas</th><th class="number">Total OTs</th>';
-  html += '<th class="number">Zonas UP</th><th class="number">Zonas DOWN</th><th class="number">Zonas Críticas</th>';
-  html += '<th>Acción</th>';
-  html += '</tr></thead><tbody>';
-  
-  cmtsData.forEach((c, idx) => {
-    const cmtsShort = c.cmts.substring(0, 30) + (c.cmts.length > 30 ? '...' : '');
+  renderCMTS(cmtsData) {
+    if (!cmtsData.length) return '<div class="loading-message"><p>No hay datos de CMTS para mostrar</p></div>';
     
-    html += `<tr>
-      <td title="${c.cmts}"><strong>${cmtsShort}</strong></td>
-      <td class="number">${c.zonas.length}</td>
-      <td class="number">${c.totalOTs}</td>
-      <td class="number">${c.zonasUp}</td>
-      <td class="number">${c.zonasDown}</td>
-      <td class="number">${c.zonasCriticas}</td>
-      <td>
-        <div style="display:flex; gap:4px;">
-          <button
-            class="btn btn-primary"
-            style="padding: 6px 12px; font-size: 0.75rem;"
-            onclick="openCMTSDetail('${c.cmts.replace(/'/g, "\\'")}')"
-          >
-            👁️ Ver Zonas
-          </button>
-          <button
-            class="btn btn-secondary"
-            style="padding: 6px 12px; font-size: 0.75rem;"
-            onclick="event.stopPropagation(); exportCMTSExcel('${c.cmts.replace(/'/g, "\\'")}')"
-          >
-            📥 Excel
-          </button>
-        </div>
-      </td>
-    </tr>`;
-  });
-  
-  html += '</tbody></table></div></div>';
-  return html;
-},
-
+    let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+    html += '<th>CMTS</th><th class="number">Zonas</th><th class="number">Total OTs</th>';
+    html += '<th class="number">Zonas UP</th><th class="number">Zonas DOWN</th><th class="number">Zonas Críticas</th>';
+    html += '<th>Acción</th>';
+    html += '</tr></thead><tbody>';
+    
+    cmtsData.forEach((c, idx) => {
+      const cmtsShort = c.cmts.substring(0, 30) + (c.cmts.length > 30 ? '...' : '');
+      
+      html += `<tr>
+        <td title="${c.cmts}"><strong>${cmtsShort}</strong></td>
+        <td class="number">${c.zonas.length}</td>
+        <td class="number">${c.totalOTs}</td>
+        <td class="number">${c.zonasUp}</td>
+        <td class="number">${c.zonasDown}</td>
+        <td class="number">${c.zonasCriticas}</td>
+        <td>
+          <div style="display:flex; gap:4px;">
+            <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openCMTSDetail('${c.cmts.replace(/'/g, "\\'")}')">👁️ Ver Zonas</button>
+            <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="event.stopPropagation(); exportCMTSExcel('${c.cmts.replace(/'/g, "\\'")}')">📥 Excel</button>
+          </div>
+        </td>
+      </tr>`;
+    });
+    
+    html += '</tbody></table></div></div>';
+    return html;
+  },
   
   renderEdificios(ordenes) {
     const edificios = new Map();
@@ -947,25 +1013,22 @@ renderCMTS(cmtsData) {
   
   renderEquipos(ordenes) {
     const grupos = new Map();
-    let debugMuestra = 0;
+    const territorios = new Set();
 
-    ordenes.forEach((o, idx) => {
+    ordenes.forEach((o) => {
       const zona = o['Zona Tecnica HFC'] || o['Zona Tecnica FTTH'] || '';
+      const territorio = o['Territorio de servicio: Nombre'] || '';
       const numCaso = o['Número del caso'] || o['Caso Externo'] || '';
       const sistema = TextUtils.detectarSistema(numCaso);
 
       const colInfo = findDispositivosColumn(o);
       const infoDispositivos = colInfo ? o[colInfo] : '';
 
-      if (debugMuestra < 3) {
-        console.log('[Equipos] Orden muestra', idx, {zona, numCaso, colInfoEncontrada: colInfo});
-        debugMuestra++;
-      }
-
       const dispositivos = TextUtils.parseDispositivosJSON(infoDispositivos);
       dispositivos.forEach(d => {
         const item = {
           zona,
+          territorio,
           numCaso,
           sistema,
           serialNumber: d.serialNumber,
@@ -976,6 +1039,7 @@ renderCMTS(cmtsData) {
         };
         if (!grupos.has(zona)) grupos.set(zona, []);
         grupos.get(zona).push(item);
+        if (territorio) territorios.add(territorio);
       });
     });
 
@@ -990,30 +1054,23 @@ renderCMTS(cmtsData) {
 
     const zonas = Array.from(grupos.keys()).sort((a,b)=>a.localeCompare(b));
     if (!zonas.length) {
-      return '<div class="loading-message"><p>⚠️ No se encontraron equipos en las órdenes (revisa la columna de Información de Dispositivos).</p></div>';
+      return '<div class="loading-message"><p>⚠️ No se encontraron equipos en las órdenes.</p></div>';
     }
 
     if (!window.equiposOpen) window.equiposOpen = new Set();
 
     let html = '<div class="equipos-filters">';
+    
     html += '<div class="filter-group">';
     html += '<div class="filter-label">Filtrar por Modelo</div>';
-    html += '<select id="filterEquipoModelo" class="input-select" multiple onchange="applyEquiposFilters()">';
-    html += '<option value="">Todos los modelos</option>';
+    html += '<select id="filterEquipoModelo" class="input-select" multiple size="3" onchange="applyEquiposFilters()">';
     Array.from(modelos).sort().forEach(m => {
-      const selected = Filters.equipoModelo === m ? 'selected' : '';
+      const selected = Filters.equipoModelo.includes(m) ? 'selected' : '';
       html += `<option value="${m}" ${selected}>${m || '(Sin modelo)'}</option>`;
     });
     html += '</select>';
     html += '</div>';
-    
-<div class="filter-group">
-  <div class="filter-label">Filtrar por Territorio</div>
-  <select id="filterEquipoTerritorio" class="input-select">
-    <option value="">Todos los territorios</option>
-  </select>
-</div>
-    
+
     html += '<div class="filter-group">';
     html += '<div class="filter-label">Filtrar por Marca</div>';
     html += '<select id="filterEquipoMarca" class="input-select" onchange="applyEquiposFilters()">';
@@ -1021,6 +1078,17 @@ renderCMTS(cmtsData) {
     Array.from(marcas).sort().forEach(m => {
       const selected = Filters.equipoMarca === m ? 'selected' : '';
       html += `<option value="${m}" ${selected}>${m || '(Sin marca)'}</option>`;
+    });
+    html += '</select>';
+    html += '</div>';
+
+    html += '<div class="filter-group">';
+    html += '<div class="filter-label">Filtrar por Territorio</div>';
+    html += '<select id="filterEquipoTerritorio" class="input-select" onchange="applyEquiposFilters()">';
+    html += '<option value="">Todos los territorios</option>';
+    Array.from(territorios).sort().forEach(t => {
+      const selected = Filters.equipoTerritorio === t ? 'selected' : '';
+      html += `<option value="${t}" ${selected}>${t}</option>`;
     });
     html += '</select>';
     html += '</div>';
@@ -1034,12 +1102,16 @@ renderCMTS(cmtsData) {
     grupos.forEach((arr, zona) => {
       let filtrado = arr;
       
-      if (Filters.equipoModelo) {
-        filtrado = filtrado.filter(e => e.modelo === Filters.equipoModelo);
+      if (Filters.equipoModelo.length > 0) {
+        filtrado = filtrado.filter(e => Filters.equipoModelo.includes(e.modelo));
       }
       
       if (Filters.equipoMarca) {
         filtrado = filtrado.filter(e => e.marca === Filters.equipoMarca);
+      }
+
+      if (Filters.equipoTerritorio) {
+        filtrado = filtrado.filter(e => e.territorio === Filters.equipoTerritorio);
       }
       
       if (filtrado.length > 0) {
@@ -1091,7 +1163,7 @@ renderCMTS(cmtsData) {
     });
 
     html += '</tbody></table></div></div>';
-    html += `<p style="text-align:center;margin-top:12px;color:var(--text-secondary)">Total: ${zonasFiltradas.length} zonas • Click para expandir/colapsar • Exporta por zona o global</p>`;
+    html += `<p style="text-align:center;margin-top:12px;color:var(--text-secondary)">Total: ${zonasFiltradas.length} zonas • Click para expandir/colapsar</p>`;
     
     window.equiposPorZona = gruposFiltrados;
     window.equiposPorZonaCompleto = grupos;
@@ -1101,14 +1173,17 @@ renderCMTS(cmtsData) {
 };
 
 function applyEquiposFilters() {
-  Filters.equipoModelo = document.getElementById('filterEquipoModelo').value;
+  const select = document.getElementById('filterEquipoModelo');
+  Filters.equipoModelo = Array.from(select.selectedOptions).map(opt => opt.value);
   Filters.equipoMarca = document.getElementById('filterEquipoMarca').value;
+  Filters.equipoTerritorio = document.getElementById('filterEquipoTerritorio').value;
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
 }
 
 function clearEquiposFilters() {
-  Filters.equipoModelo = '';
+  Filters.equipoModelo = [];
   Filters.equipoMarca = '';
+  Filters.equipoTerritorio = '';
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
 }
 
@@ -1131,12 +1206,45 @@ function exportEquiposGrupoExcel(zona, useFiltered = false){
   const ws = XLSX.utils.json_to_sheet(arr);
   XLSX.utils.book_append_sheet(wb, ws, `Equipos_${zona||'NA'}`);
   
-  const filterInfo = useFiltered && (Filters.equipoModelo || Filters.equipoMarca) 
-    ? `_${Filters.equipoModelo || 'TodosModelos'}_${Filters.equipoMarca || 'TodasMarcas'}`
+  const filterInfo = useFiltered && (Filters.equipoModelo.length > 0 || Filters.equipoMarca || Filters.equipoTerritorio)
+    ? `_filtrado`
     : '';
   
   XLSX.writeFile(wb, `Equipos_${zona||'NA'}${filterInfo}_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast(`✅ Exportados ${arr.length} equipos de ${zona}`);
+}
+
+function exportZonaExcel(zoneIdx) {
+  const zonaData = window.currentAnalyzedZones[zoneIdx];
+  if (!zonaData) return toast('No hay datos de la zona');
+  
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(zonaData.ordenesOriginales || zonaData.ordenes || []);
+  XLSX.utils.book_append_sheet(wb, ws, `Zona_${zonaData.zona}`);
+  
+  XLSX.writeFile(wb, `Zona_${zonaData.zona}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast(`✅ Exportada zona ${zonaData.zona}`);
+}
+
+function exportCMTSExcel(cmts) {
+  const cmtsData = (window.currentCMTSData || []).find(c => c.cmts === cmts);
+  if (!cmtsData) return toast('No hay datos del CMTS');
+  
+  const wb = XLSX.utils.book_new();
+  const zonasFlat = cmtsData.zonas.map(z => ({
+    Zona: z.zona,
+    Tipo: z.tipo,
+    Total_OTs: z.totalOTs,
+    Ingreso_N: z.ingresoN,
+    Ingreso_N1: z.ingresoN1,
+    Estado_Nodo: z.nodoEstado
+  }));
+  
+  const ws = XLSX.utils.json_to_sheet(zonasFlat);
+  XLSX.utils.book_append_sheet(wb, ws, `CMTS_${cmts.slice(0,20)}`);
+  
+  XLSX.writeFile(wb, `CMTS_${cmts.slice(0,20)}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast(`✅ Exportado CMTS ${cmts}`);
 }
 
 let currentData = null;
@@ -1277,12 +1385,7 @@ function applyFilters() {
   Filters.quickSearch = document.getElementById('quickSearch').value;
   Filters.ordenarPorIngreso = document.getElementById('ordenarPorIngreso').value;
   
-  console.log(`✅ Aplicando filtros - Ventana: ${Filters.days} días`);
-  console.log(`📊 Estados activos: ${CONFIG.estadosPermitidos.join(', ')}`);
-  console.log(`🔥 Ordenamiento: ${Filters.ordenarPorIngreso || 'Por score'}`);
-  
   const filtered = Filters.apply(currentData.ordenes);
-  console.log(`Órdenes después de filtros: ${filtered.length}`);
   
   const zones = dataProcessor.processZones(filtered);
   let analyzed = dataProcessor.analyzeZones(zones, Filters.days);
@@ -1316,7 +1419,6 @@ function applyFilters() {
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
 }
 
-// 👉 Función común para resetear todos los filtros (UI + flags internos)
 function resetFiltersState() {
   document.getElementById('filterCATEC').checked = false;
   document.getElementById('showAllStates').checked = false;
@@ -1330,55 +1432,43 @@ function resetFiltersState() {
   document.getElementById('filterAlarma').value = '';
   document.getElementById('quickSearch').value = '';
   document.getElementById('ordenarPorIngreso').value = 'desc';
-
-  // flags internos
   Filters.criticidad = '';
 }
 
-// 👉 Botón "Limpiar" sigue usando clearFilters
 function clearFilters() {
   resetFiltersState();
   applyFilters();
 }
 
-// 👉 Nuevo: filtrar haciendo clic en las tarjetas del panel de KPIs
 function filterByStat(statType) {
-  // 1) Resetear todo a estado base
   resetFiltersState();
 
-  // 2) Aplicar el filtro según KPI clickeado
   switch (statType) {
     case 'total':
     case 'zonas':
       toast('🔄 Mostrando todas las zonas (filtros reseteados)');
       break;
-
     case 'criticas':
       Filters.criticidad = 'critico';
       toast('🚨 Mostrando solo ZONAS CRÍTICAS (score)');
       break;
-
     case 'ftth':
       document.getElementById('filterFTTH').checked = true;
       document.getElementById('filterExcludeFTTH').checked = false;
       toast('🔌 Mostrando solo zonas FTTH');
       break;
-
     case 'alarmas':
       document.getElementById('filterAlarma').value = 'con-alarma';
       toast('🚨 Mostrando zonas con alarmas activas');
       break;
-
     case 'nodosCriticos':
       document.getElementById('filterNodoEstado').value = 'critical';
       toast('🟥 Mostrando zonas con NODOS CRÍTICOS');
       break;
   }
 
-  // 3) Reaplicar filtros con la nueva configuración
   applyFilters();
 }
-
 
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -1501,13 +1591,9 @@ function openModal(zoneIdx) {
 }
 
 function openCMTSDetail(cmts) {
-  console.log('=== openCMTSDetail llamado ===');
-  console.log('CMTS solicitado:', cmts);
-  
   const cmtsDataSource = window.currentCMTSData || allCMTS;
   
   if (!cmtsDataSource || !cmtsDataSource.length) {
-    console.error('No hay datos de CMTS disponibles');
     toast('❌ No hay datos de CMTS disponibles');
     return;
   }
@@ -1515,7 +1601,6 @@ function openCMTSDetail(cmts) {
   const cmtsData = cmtsDataSource.find(c => c.cmts === cmts);
   
   if (!cmtsData) {
-    console.error('CMTS no encontrado:', cmts);
     toast('❌ No se encontró el CMTS: ' + cmts);
     return;
   }
@@ -1846,6 +1931,7 @@ function exportExcelZonasCrudo(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zonasData), 'Zonas');
   const fecha = new Date().toISOString().slice(0,10);
   XLSX.writeFile(wb, `Zonas_Crudo_${fecha}.xlsx`);
+  toast('✓ Zonas exportadas');
 }
 
 function exportModalDetalleExcel(){
@@ -1877,6 +1963,7 @@ function exportModalDetalleExcel(){
 
   const fecha = new Date().toISOString().slice(0,10);
   XLSX.writeFile(wb, `Detalle_${fecha}.xlsx`);
+  toast('✓ Detalle exportado');
 }
 
 function debounce(func, wait) {
@@ -1888,8 +1975,10 @@ function debounce(func, wait) {
 }
 
 console.log('✅ Panel v4.9 MEJORADO inicializado');
-console.log('🔥 NUEVAS FUNCIONALIDADES:');
-console.log('   • Ordenamiento de zonas por ingreso (mayor/menor)');
-console.log('   • Filtros de equipos por modelo y marca');
-console.log('   • Exportación filtrada de equipos');
+console.log('🔥 FUNCIONALIDADES:');
+console.log('   • Ordenamiento de zonas por ingreso');
+console.log('   • Filtros de equipos múltiples (modelo/marca/territorio)');
+console.log('   • Stats clickeables');
+console.log('   • Exportaciones completas');
+console.log('   • Planillas funcionales');
 console.log('📊 Estados activos:', CONFIG.estadosPermitidos);
