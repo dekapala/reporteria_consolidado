@@ -30,6 +30,31 @@ const FMS_TIPOS = {
   'CE': 'Caja Empalme',
   'NAP': 'NAP'
 };
+const TerritorioUtils = {
+  // Normaliza el territorio quitando Flex 1, 2, 3, etc.
+  normalizar(territorio) {
+    if (!territorio) return '';
+    // Remueve "Flex" seguido de número, manteniendo solo el nombre base
+    return territorio
+      .replace(/\s*flex\s*\d+/gi, ' Flex')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  },
+
+  // Extrae el número de flex si existe
+  extraerFlex(territorio) {
+    if (!territorio) return null;
+    const match = territorio.match(/flex\s*(\d+)/i);
+    return match ? parseInt(match[1]) : null;
+  },
+
+  // Determina si un territorio tiene subdivisiones flex
+  tieneFlex(territorio) {
+    if (!territorio) return false;
+    return /flex\s*\d+/i.test(territorio);
+  }
+};
+
 
 function stripAccents(s=''){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
 
@@ -296,6 +321,69 @@ class DataProcessor {
     this.fmsMap = new Map();
     this.allColumns = new Set();
   }
+  DataProcessor.prototype.analyzeTerritorios = function (zones) {
+  const territoriosMap = new Map();
+
+  zones.forEach(z => {
+    const territorioOriginal = z.territorio;
+    if (!territorioOriginal) return;
+
+    // Normalizar territorio (agrupa flex 1, 2, 3)
+    const territorioNormalizado = TerritorioUtils.normalizar(territorioOriginal);
+    const numeroFlex = TerritorioUtils.extraerFlex(territorioOriginal);
+
+    if (!territoriosMap.has(territorioNormalizado)) {
+      territoriosMap.set(territorioNormalizado, {
+        territorio: territorioNormalizado,
+        territorioOriginal: territorioOriginal,
+        zonas: [],
+        flexSubdivisiones: new Map(), // flex 1, 2, 3, etc.
+        totalOTs: 0,
+        zonasConAlarma: 0,
+        zonasCriticas: 0,
+        zonasUp: 0,
+        zonasDown: 0,
+        esCritico: false
+      });
+    }
+
+    const grupo = territoriosMap.get(territorioNormalizado);
+    grupo.zonas.push(z);
+    grupo.totalOTs += z.totalOTs;
+
+    if (z.tieneAlarma) grupo.zonasConAlarma++;
+    if (z.criticidad === 'CRÍTICO') grupo.zonasCriticas++;
+    if (z.nodoEstado === 'up') grupo.zonasUp++;
+    if (z.nodoEstado === 'down' || z.nodoEstado === 'critical') grupo.zonasDown++;
+
+    // Agrupar por flex si existe
+    if (numeroFlex !== null) {
+      const flexKey = `Flex ${numeroFlex}`;
+      if (!grupo.flexSubdivisiones.has(flexKey)) {
+        grupo.flexSubdivisiones.set(flexKey, {
+          nombre: flexKey,
+          zonas: [],
+          totalOTs: 0,
+          zonasCriticas: 0
+        });
+      }
+
+      const flexGrupo = grupo.flexSubdivisiones.get(flexKey);
+      flexGrupo.zonas.push(z);
+      flexGrupo.totalOTs += z.totalOTs;
+      if (z.criticidad === 'CRÍTICO') flexGrupo.zonasCriticas++;
+    }
+
+    // Un territorio es crítico si tiene al menos 1 zona crítica
+    if (z.criticidad === 'CRÍTICO') {
+      grupo.esCritico = true;
+    }
+  });
+
+  return Array.from(territoriosMap.values())
+    .sort((a, b) => b.totalOTs - a.totalOTs);
+};
+
   
   async loadExcel(file, tipo) {
     try {
@@ -828,33 +916,39 @@ const Filters = {
 
 const UIRenderer = {
   renderStats(data) {
-    return `
-      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('total')">
-        <div class="stat-label">Total Órdenes</div>
-        <div class="stat-value">${NumberUtils.format(data.total)}</div>
-      </div>
-      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('zonas')">
-        <div class="stat-label">Zonas Analizadas</div>
-        <div class="stat-value">${NumberUtils.format(data.zonas)}</div>
-      </div>
-      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('criticas')">
-        <div class="stat-label">Zonas Críticas</div>
-        <div class="stat-value">${NumberUtils.format(data.criticas)}</div>
-      </div>
-      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('ftth')">
-        <div class="stat-label">Zonas FTTH</div>
-        <div class="stat-value">${NumberUtils.format(data.ftth)}</div>
-      </div>
-      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('alarmas')">
-        <div class="stat-label">Con Alarmas</div>
-        <div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div>
-      </div>
-      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('nodosCriticos')">
-        <div class="stat-label">Nodos Críticos</div>
-        <div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div>
-      </div>
-    `;
-  },
+  return `
+    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('total')">
+      <div class="stat-label">Total Órdenes</div>
+      <div class="stat-value">${NumberUtils.format(data.total)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('zonas')">
+      <div class="stat-label">Zonas Analizadas</div>
+      <div class="stat-value">${NumberUtils.format(data.zonas)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('territoriosCriticos')">
+      <div class="stat-label">Territorios Críticos</div>
+      <div class="stat-value">${NumberUtils.format(data.territoriosCriticos)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('ftth')">
+      <div class="stat-label">Zonas FTTH</div>
+      <div class="stat-value">${NumberUtils.format(data.ftth)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('alarmas')">
+      <div class="stat-label">Con Alarmas</div>
+      <div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('nodosCriticos')">
+      <div class="stat-label">Nodos Críticos</div>
+      <div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div>
+    </div>
+  `;
+},
+
   
   renderSparkline(counts, labels) {
     const max = Math.max(...counts, 1);
@@ -1319,33 +1413,38 @@ async function loadFile(e, tipo) {
 function processData() {
   const merged = dataProcessor.merge();
   if (!merged.length) return;
-  
+
   const daysWindow = parseInt(document.getElementById('daysWindow').value);
-  
+
   const zones = dataProcessor.processZones(merged);
   allZones = dataProcessor.analyzeZones(zones, daysWindow);
   allCMTS = dataProcessor.analyzeCMTS(allZones);
-  
+
+  // NUEVO: Analizar territorios
+  const territoriosAnalisis = dataProcessor.analyzeTerritorios(allZones);
+  window.territoriosData = territoriosAnalisis;
+
   currentData = {
     ordenes: merged,
     zonas: allZones
   };
-  
+
   populateFilters();
-  
+
+  // Stats con TERRITORIOS CRÍTICOS
   const stats = {
     total: allZones.reduce((sum, z) => sum + z.totalOTs, 0),
     zonas: allZones.length,
-    criticas: allZones.filter(z => z.criticidad === 'CRÍTICO').length,
+    territoriosCriticos: territoriosAnalisis.filter(t => t.esCritico).length,
     ftth: allZones.filter(z => z.tipo === 'FTTH').length,
     conAlarmas: allZones.filter(z => z.tieneAlarma).length,
     nodosCriticos: allZones.filter(z => z.nodoEstado === 'critical').length
   };
-  
+
   document.getElementById('statsGrid').innerHTML = UIRenderer.renderStats(stats);
   document.getElementById('btnExportExcel').disabled = false;
   document.getElementById('btnExportExcelZonas').disabled = false;
-  
+
   let statusText = `✓ ${merged.length} órdenes procesadas (deduplicadas)`;
   if (dataProcessor.nodosData) {
     statusText += ` • ${dataProcessor.nodosMap.size} nodos integrados`;
@@ -1355,9 +1454,10 @@ function processData() {
   }
   statusText += ` • Ventana: ${daysWindow} días`;
   document.getElementById('mergeStatusText').textContent = statusText;
-  
+
   applyFilters();
 }
+
 
 function populateFilters() {
   const territorios = [...new Set(currentData.ordenes.map(o => o['Territorio de servicio: Nombre']).filter(Boolean))];
@@ -1448,19 +1548,35 @@ function filterByStat(statType) {
     case 'zonas':
       toast('🔄 Mostrando todas las zonas (filtros reseteados)');
       break;
-    case 'criticas':
-      Filters.criticidad = 'critico';
-      toast('🚨 Mostrando solo ZONAS CRÍTICAS (score)');
-      break;
+
+    case 'territoriosCriticos':
+      // Filtrar por territorios críticos
+      if (!window.territoriosData) {
+        toast('❌ No hay datos de territorios disponibles');
+        break;
+      }
+
+      const territoriosCriticos = window.territoriosData.filter(t => t.esCritico);
+      if (territoriosCriticos.length === 0) {
+        toast('✅ No hay territorios críticos en este momento');
+        break;
+      }
+
+      // Mostrar modal con detalle de territorios críticos
+      showTerritoriosCriticosModal(territoriosCriticos);
+      return; // No aplicar filtros, sólo mostrar modal
+
     case 'ftth':
       document.getElementById('filterFTTH').checked = true;
       document.getElementById('filterExcludeFTTH').checked = false;
       toast('🔌 Mostrando solo zonas FTTH');
       break;
+
     case 'alarmas':
       document.getElementById('filterAlarma').value = 'con-alarma';
       toast('🚨 Mostrando zonas con alarmas activas');
       break;
+
     case 'nodosCriticos':
       document.getElementById('filterNodoEstado').value = 'critical';
       toast('🟥 Mostrando zonas con NODOS CRÍTICOS');
@@ -1588,6 +1704,111 @@ function openModal(zoneIdx) {
   
   document.getElementById('modalBackdrop').classList.add('show');
   document.body.classList.add('modal-open');
+}
+function showTerritoriosCriticosModal(territoriosCriticos) {
+  let html = '<div class="territorios-criticos-container">';
+  html += '<h3 style="color: #D13438; margin-bottom: 20px;">🚨 Territorios Críticos Detectados</h3>';
+
+  territoriosCriticos.forEach(t => {
+    html += `<div class="territorio-critico-card" style="
+      background: white;
+      border: 2px solid #D13438;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 8px rgba(209, 52, 56, 0.15);
+    ">`;
+
+    html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">`;
+    html += `<h4 style="color: #0078D4; margin: 0; font-size: 1.1rem;">${t.territorio}</h4>`;
+    html += `<span class="badge badge-critical" style="font-size: 0.85rem;">CRÍTICO</span>`;
+    html += `</div>`;
+
+    html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">`;
+    html += `<div><strong>Total OTs:</strong> ${t.totalOTs}</div>`;
+    html += `<div><strong>Zonas Críticas:</strong> ${t.zonasCriticas}</div>`;
+    html += `<div><strong>Con Alarmas:</strong> ${t.zonasConAlarma}</div>`;
+    html += `<div><strong>Total Zonas:</strong> ${t.zonas.length}</div>`;
+    html += `</div>`;
+
+    // Subdivisiones Flex
+    if (t.flexSubdivisiones.size > 0) {
+      html += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #E1DFDD;">`;
+      html += `<strong style="color: #605E5C; font-size: 0.9rem;">📍 Subdivisiones:</strong>`;
+      html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px;">`;
+
+      Array.from(t.flexSubdivisiones.values()).forEach(flex => {
+        const badgeColor = flex.zonasCriticas > 0 ? '#D13438' : '#107C10';
+        html += `<div style="
+          background: ${badgeColor}15;
+          border: 1px solid ${badgeColor};
+          border-radius: 6px;
+          padding: 8px;
+          text-align: center;
+        ">`;
+        html += `<div style="font-weight: 600; color: ${badgeColor};">${flex.nombre}</div>`;
+        html += `<div style="font-size: 0.75rem; color: #605E5C;">${flex.zonas.length} zonas</div>`;
+        html += `<div style="font-size: 0.75rem; color: #605E5C;">${flex.totalOTs} OTs</div>`;
+        if (flex.zonasCriticas > 0) {
+          html += `<div style="font-size: 0.75rem; color: ${badgeColor};">⚠️ ${flex.zonasCriticas} críticas</div>`;
+        }
+        html += `</div>`;
+      });
+
+      html += `</div></div>`;
+    }
+
+    html += `<div style="margin-top: 12px;">`;
+    html += `<button class="btn btn-primary" style="font-size: 0.85rem; padding: 8px 16px;"
+              onclick="filtrarPorTerritorio('${t.territorio.replace(/'/g, "\\'")}')">
+       🔍 Ver Zonas de ${t.territorio}
+     </button>`;
+    html += `</div>`;
+
+    html += `</div>`;
+  });
+
+  html += `<div style="text-align: center; margin-top: 20px;">`;
+  html += `<button class="btn btn-secondary" onclick="closeTerritoriosCriticosModal()">Cerrar</button>`;
+  html += `</div>`;
+
+  html += '</div>';
+
+  document.getElementById('modalTitle').textContent = `📊 Territorios Críticos (${territoriosCriticos.length})`;
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalFilters').style.display = 'none';
+  document.getElementById('modalFooter').innerHTML = '';
+
+  document.getElementById('modalBackdrop').classList.add('show');
+  document.body.classList.add('modal-open');
+}
+
+function closeTerritoriosCriticosModal() {
+  closeModal();
+}
+
+function filtrarPorTerritorio(territorioNormalizado) {
+  closeModal();
+
+  // Buscar el territorio original que coincida
+  const territoriosOriginales = [...new Set(
+    currentData.ordenes
+      .map(o => o['Territorio de servicio: Nombre'])
+      .filter(t => t && TerritorioUtils.normalizar(t) === territorioNormalizado)
+  )];
+
+  if (territoriosOriginales.length === 0) {
+    toast('❌ No se encontraron zonas para este territorio');
+    return;
+  }
+
+  // Si hay múltiples (Flex 1/2/3), uso el primero
+  document.getElementById('filterTerritorio').value = territoriosOriginales[0];
+  toast(`🔍 Filtrando por territorio: ${territorioNormalizado}`);
+  applyFilters();
+
+  // Cambiar a la pestaña de Zonas
+  switchTab('zonas');
 }
 
 function openCMTSDetail(cmts) {
@@ -1974,11 +2195,10 @@ function debounce(func, wait) {
   };
 }
 
-console.log('✅ Panel v4.9 MEJORADO inicializado');
-console.log('🔥 FUNCIONALIDADES:');
-console.log('   • Ordenamiento de zonas por ingreso');
-console.log('   • Filtros de equipos múltiples (modelo/marca/territorio)');
-console.log('   • Stats clickeables');
-console.log('   • Exportaciones completas');
-console.log('   • Planillas funcionales');
-console.log('📊 Estados activos:', CONFIG.estadosPermitidos);
+console.log('✅ Panel v4.9 + TERRITORIOS CRÍTICOS inicializado');
+console.log('🎯 NUEVA FUNCIONALIDAD:');
+console.log('   • Territorios Críticos en lugar de Zonas Críticas');
+console.log('   • Agrupación automática de Flex 1, 2, 3');
+console.log('   • Detalle de subdivisiones mantenido');
+console.log('   • Modal interactivo con territorios críticos');
+
