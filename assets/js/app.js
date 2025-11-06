@@ -598,6 +598,7 @@ const Filters = {
   ordenarPorIngreso: 'desc',
   equipoModelo: '',
   equipoMarca: '',
+  criticidad: '',
   
   apply(rows) {
     let filtered = rows.slice();
@@ -684,6 +685,10 @@ const Filters = {
   
   applyToZones(zones) {
     let filtered = zones.slice();
+
+        if (this.criticidad === 'critico') {
+      filtered = filtered.filter(z => z.criticidad === 'CRITICO');
+    }
     
     if (this.nodoEstado) {
       filtered = filtered.filter(z => {
@@ -717,16 +722,46 @@ const Filters = {
 };
 
 const UIRenderer = {
-  renderStats(data) {
-    return `
-      <div class="stat-card"><div class="stat-label">Total Órdenes</div><div class="stat-value">${NumberUtils.format(data.total)}</div></div>
-      <div class="stat-card"><div class="stat-label">Zonas Analizadas</div><div class="stat-value">${NumberUtils.format(data.zonas)}</div></div>
-      <div class="stat-card"><div class="stat-label">Zonas Críticas</div><div class="stat-value">${NumberUtils.format(data.criticas)}</div></div>
-      <div class="stat-card"><div class="stat-label">Zonas FTTH</div><div class="stat-value">${NumberUtils.format(data.ftth)}</div></div>
-      <div class="stat-card"><div class="stat-label">Con Alarmas</div><div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div></div>
-      <div class="stat-card"><div class="stat-label">Nodos Críticos</div><div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div></div>
-    `;
-  },
+renderStats(data) {
+  return `
+    <div class="stat-card clickable" style="cursor:pointer"
+         onclick="filterByStat('total')">
+      <div class="stat-label">Total Órdenes</div>
+      <div class="stat-value">${NumberUtils.format(data.total)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer"
+         onclick="filterByStat('zonas')">
+      <div class="stat-label">Zonas Analizadas</div>
+      <div class="stat-value">${NumberUtils.format(data.zonas)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer"
+         onclick="filterByStat('criticas')">
+      <div class="stat-label">Zonas Críticas</div>
+      <div class="stat-value">${NumberUtils.format(data.criticas)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer"
+         onclick="filterByStat('ftth')">
+      <div class="stat-label">Zonas FTTH</div>
+      <div class="stat-value">${NumberUtils.format(data.ftth)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer"
+         onclick="filterByStat('alarmas')">
+      <div class="stat-label">Con Alarmas</div>
+      <div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div>
+    </div>
+
+    <div class="stat-card clickable" style="cursor:pointer"
+         onclick="filterByStat('nodosCriticos')">
+      <div class="stat-label">Nodos Críticos</div>
+      <div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div>
+    </div>
+  `;
+},
+
   
   renderSparkline(counts, labels) {
     const max = Math.max(...counts, 1);
@@ -963,7 +998,7 @@ renderCMTS(cmtsData) {
     let html = '<div class="equipos-filters">';
     html += '<div class="filter-group">';
     html += '<div class="filter-label">Filtrar por Modelo</div>';
-    html += '<select id="filterEquipoModelo" class="input-select" onchange="applyEquiposFilters()">';
+    html += '<select id="filterEquipoModelo" class="input-select" multiple onchange="applyEquiposFilters()">';
     html += '<option value="">Todos los modelos</option>';
     Array.from(modelos).sort().forEach(m => {
       const selected = Filters.equipoModelo === m ? 'selected' : '';
@@ -971,7 +1006,14 @@ renderCMTS(cmtsData) {
     });
     html += '</select>';
     html += '</div>';
-
+    
+<div class="filter-group">
+  <div class="filter-label">Filtrar por Territorio</div>
+  <select id="filterEquipoTerritorio" class="input-select">
+    <option value="">Todos los territorios</option>
+  </select>
+</div>
+    
     html += '<div class="filter-group">';
     html += '<div class="filter-label">Filtrar por Marca</div>';
     html += '<select id="filterEquipoMarca" class="input-select" onchange="applyEquiposFilters()">';
@@ -1274,7 +1316,8 @@ function applyFilters() {
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
 }
 
-function clearFilters() {
+// 👉 Función común para resetear todos los filtros (UI + flags internos)
+function resetFiltersState() {
   document.getElementById('filterCATEC').checked = false;
   document.getElementById('showAllStates').checked = false;
   document.getElementById('filterFTTH').checked = false;
@@ -1287,8 +1330,55 @@ function clearFilters() {
   document.getElementById('filterAlarma').value = '';
   document.getElementById('quickSearch').value = '';
   document.getElementById('ordenarPorIngreso').value = 'desc';
+
+  // flags internos
+  Filters.criticidad = '';
+}
+
+// 👉 Botón "Limpiar" sigue usando clearFilters
+function clearFilters() {
+  resetFiltersState();
   applyFilters();
 }
+
+// 👉 Nuevo: filtrar haciendo clic en las tarjetas del panel de KPIs
+function filterByStat(statType) {
+  // 1) Resetear todo a estado base
+  resetFiltersState();
+
+  // 2) Aplicar el filtro según KPI clickeado
+  switch (statType) {
+    case 'total':
+    case 'zonas':
+      toast('🔄 Mostrando todas las zonas (filtros reseteados)');
+      break;
+
+    case 'criticas':
+      Filters.criticidad = 'critico';
+      toast('🚨 Mostrando solo ZONAS CRÍTICAS (score)');
+      break;
+
+    case 'ftth':
+      document.getElementById('filterFTTH').checked = true;
+      document.getElementById('filterExcludeFTTH').checked = false;
+      toast('🔌 Mostrando solo zonas FTTH');
+      break;
+
+    case 'alarmas':
+      document.getElementById('filterAlarma').value = 'con-alarma';
+      toast('🚨 Mostrando zonas con alarmas activas');
+      break;
+
+    case 'nodosCriticos':
+      document.getElementById('filterNodoEstado').value = 'critical';
+      toast('🟥 Mostrando zonas con NODOS CRÍTICOS');
+      break;
+  }
+
+  // 3) Reaplicar filtros con la nueva configuración
+  applyFilters();
+}
+
 
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
