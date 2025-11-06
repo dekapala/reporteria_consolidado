@@ -1,4 +1,4 @@
-console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por ingresos');
+console.log('🚀 Panel v5.0 COMPLETO - Territorios Críticos + Filtros Equipos + Stats Clickeables');
 
 const CONFIG = { 
   codigo_befan: 'FR461',
@@ -30,31 +30,27 @@ const FMS_TIPOS = {
   'CE': 'Caja Empalme',
   'NAP': 'NAP'
 };
+
 const TerritorioUtils = {
-  // Normaliza el territorio quitando Flex 1, 2, 3, etc.
   normalizar(territorio) {
     if (!territorio) return '';
-    // Remueve "Flex" seguido de número, manteniendo solo el nombre base
     return territorio
       .replace(/\s*flex\s*\d+/gi, ' Flex')
       .replace(/\s{2,}/g, ' ')
       .trim();
   },
 
-  // Extrae el número de flex si existe
   extraerFlex(territorio) {
     if (!territorio) return null;
     const match = territorio.match(/flex\s*(\d+)/i);
     return match ? parseInt(match[1]) : null;
   },
 
-  // Determina si un territorio tiene subdivisiones flex
   tieneFlex(territorio) {
     if (!territorio) return false;
     return /flex\s*\d+/i.test(territorio);
   }
 };
-
 
 function stripAccents(s=''){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
 
@@ -295,7 +291,7 @@ Tipo: \${tipo.toUpperCase()}
 Observaciones:
 \${obs}
 
-Generado desde Panel Fulfillment v4.9\`;
+Generado desde Panel Fulfillment v5.0\`;
       output.classList.add('show');
     }
     function copiar() {
@@ -321,69 +317,6 @@ class DataProcessor {
     this.fmsMap = new Map();
     this.allColumns = new Set();
   }
-  DataProcessor.prototype.analyzeTerritorios = function (zones) {
-  const territoriosMap = new Map();
-
-  zones.forEach(z => {
-    const territorioOriginal = z.territorio;
-    if (!territorioOriginal) return;
-
-    // Normalizar territorio (agrupa flex 1, 2, 3)
-    const territorioNormalizado = TerritorioUtils.normalizar(territorioOriginal);
-    const numeroFlex = TerritorioUtils.extraerFlex(territorioOriginal);
-
-    if (!territoriosMap.has(territorioNormalizado)) {
-      territoriosMap.set(territorioNormalizado, {
-        territorio: territorioNormalizado,
-        territorioOriginal: territorioOriginal,
-        zonas: [],
-        flexSubdivisiones: new Map(), // flex 1, 2, 3, etc.
-        totalOTs: 0,
-        zonasConAlarma: 0,
-        zonasCriticas: 0,
-        zonasUp: 0,
-        zonasDown: 0,
-        esCritico: false
-      });
-    }
-
-    const grupo = territoriosMap.get(territorioNormalizado);
-    grupo.zonas.push(z);
-    grupo.totalOTs += z.totalOTs;
-
-    if (z.tieneAlarma) grupo.zonasConAlarma++;
-    if (z.criticidad === 'CRÍTICO') grupo.zonasCriticas++;
-    if (z.nodoEstado === 'up') grupo.zonasUp++;
-    if (z.nodoEstado === 'down' || z.nodoEstado === 'critical') grupo.zonasDown++;
-
-    // Agrupar por flex si existe
-    if (numeroFlex !== null) {
-      const flexKey = `Flex ${numeroFlex}`;
-      if (!grupo.flexSubdivisiones.has(flexKey)) {
-        grupo.flexSubdivisiones.set(flexKey, {
-          nombre: flexKey,
-          zonas: [],
-          totalOTs: 0,
-          zonasCriticas: 0
-        });
-      }
-
-      const flexGrupo = grupo.flexSubdivisiones.get(flexKey);
-      flexGrupo.zonas.push(z);
-      flexGrupo.totalOTs += z.totalOTs;
-      if (z.criticidad === 'CRÍTICO') flexGrupo.zonasCriticas++;
-    }
-
-    // Un territorio es crítico si tiene al menos 1 zona crítica
-    if (z.criticidad === 'CRÍTICO') {
-      grupo.esCritico = true;
-    }
-  });
-
-  return Array.from(territoriosMap.values())
-    .sort((a, b) => b.totalOTs - a.totalOTs);
-};
-
   
   async loadExcel(file, tipo) {
     try {
@@ -584,7 +517,7 @@ class DataProcessor {
       const cita = r['Número de cita'];
       if (cita) {
         if (!map.has(cita)) {
-          map.set(cita, {...r, _merged: false});
+          map.set(cita, { ...r, _merged: false });
         }
       }
     });
@@ -601,7 +534,7 @@ class DataProcessor {
           });
           existing._merged = true;
         } else {
-          map.set(cita, {...r, _merged: false});
+          map.set(cita, { ...r, _merged: false });
         }
       }
     });
@@ -651,52 +584,52 @@ class DataProcessor {
   
   analyzeZones(zones, daysWindow) {
     const today = new Date();
-    today.setHours(0,0,0,0);
-    
+    today.setHours(0, 0, 0, 0);
+
     console.log(`✅ Analizando zonas con ventana de ${daysWindow} días`);
-    
+
     return zones.map(z => {
       const seenOTperDay = new Map();
       const ordenesPerDay = new Map();
       let ordenesEnVentana = 0;
-      
+
       const diagnosticos = new Set();
-      
+
       z.ordenes.forEach(o => {
         const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
         const dt = DateUtils.parse(fecha);
         if (!dt) return;
-        
+
         const daysAgo = DateUtils.daysBetween(today, dt);
-        
+
         if (daysAgo <= daysWindow) {
           ordenesEnVentana++;
-          
+
           const dk = DateUtils.toDayKey(dt);
           if (!seenOTperDay.has(dk)) seenOTperDay.set(dk, new Set());
           if (!ordenesPerDay.has(dk)) ordenesPerDay.set(dk, []);
-          
+
           const cita = o['Número de cita'];
           if (cita) {
             seenOTperDay.get(dk).add(cita);
             ordenesPerDay.get(dk).push(o);
           }
-          
+
           const diag = o['Diagnostico Tecnico'] || o['Diagnóstico Técnico'] || '';
           if (diag) diagnosticos.add(diag);
         }
       });
-      
+
       const todayKey = DateUtils.toDayKey(today);
       const yesterdayKey = DateUtils.toDayKey(new Date(today.getTime() - 86400000));
-      
-      const ingresoN = seenOTperDay.get(todayKey)?.size || 0;
+
+      const ingresoN  = seenOTperDay.get(todayKey)?.size || 0;
       const ingresoN1 = seenOTperDay.get(yesterdayKey)?.size || 0;
       const maxDia = Math.max(0, ...Array.from(seenOTperDay.values()).map(s => s.size));
-      
+
       const score = 4 * ingresoN + 2 * ingresoN1 + 1.5 * maxDia;
       const criticidad = score >= 12 ? 'CRÍTICO' : score >= 7 ? 'ALTO' : 'MEDIO';
-      
+
       const last7Days = [];
       const last7DaysCounts = [];
       for (let i = 6; i >= 0; i--) {
@@ -706,19 +639,19 @@ class DataProcessor {
         last7Days.push(DateUtils.format(date).slice(0, 5));
         last7DaysCounts.push(seenOTperDay.get(dk)?.size || 0);
       }
-      
+
       let nodoInfo = null;
       if (this.nodosMap.has(z.zona)) {
         nodoInfo = this.nodosMap.get(z.zona);
       } else if (z.zonaHFC && this.nodosMap.has(z.zonaHFC)) {
         nodoInfo = this.nodosMap.get(z.zonaHFC);
       }
-      
-      const alarmasFMS = this.fmsMap.get(z.zona) || 
-                       this.fmsMap.get(z.zonaHFC) || 
-                       this.fmsMap.get(z.zonaFTTH) || [];
+
+      const alarmasFMS = this.fmsMap.get(z.zona) ||
+                         this.fmsMap.get(z.zonaHFC) ||
+                         this.fmsMap.get(z.zonaFTTH) || [];
       const alarmasActivas = alarmasFMS.filter(a => a.isActive);
-      
+
       return {
         ...z,
         totalOTs: ordenesEnVentana,
@@ -739,7 +672,7 @@ class DataProcessor {
         tieneAlarma: alarmasActivas.length > 0,
         ordenesOriginales: z.ordenes
       };
-    }).sort((a,b) => b.score - a.score);
+    }).sort((a, b) => b.score - a.score);
   }
   
   analyzeCMTS(zones) {
@@ -769,7 +702,67 @@ class DataProcessor {
       if (z.nodoEstado === 'critical') group.zonasCriticas++;
     });
     
-    return Array.from(cmtsGroups.values()).sort((a,b) => b.totalOTs - a.totalOTs);
+    return Array.from(cmtsGroups.values()).sort((a, b) => b.totalOTs - a.totalOTs);
+  }
+  
+  analyzeTerritorios(zones) {
+    const territoriosMap = new Map();
+    
+    zones.forEach(z => {
+      const territorioOriginal = z.territorio;
+      if (!territorioOriginal) return;
+      
+      const territorioNormalizado = TerritorioUtils.normalizar(territorioOriginal);
+      const numeroFlex = TerritorioUtils.extraerFlex(territorioOriginal);
+      
+      if (!territoriosMap.has(territorioNormalizado)) {
+        territoriosMap.set(territorioNormalizado, {
+          territorio: territorioNormalizado,
+          territorioOriginal: territorioOriginal,
+          zonas: [],
+          flexSubdivisiones: new Map(),
+          totalOTs: 0,
+          zonasConAlarma: 0,
+          zonasCriticas: 0,
+          zonasUp: 0,
+          zonasDown: 0,
+          esCritico: false
+        });
+      }
+      
+      const grupo = territoriosMap.get(territorioNormalizado);
+      grupo.zonas.push(z);
+      grupo.totalOTs += z.totalOTs;
+      
+      if (z.tieneAlarma) grupo.zonasConAlarma++;
+      if (z.criticidad === 'CRÍTICO') grupo.zonasCriticas++;
+      if (z.nodoEstado === 'up') grupo.zonasUp++;
+      if (z.nodoEstado === 'down' || z.nodoEstado === 'critical') grupo.zonasDown++;
+      
+      if (numeroFlex !== null) {
+        const flexKey = `Flex ${numeroFlex}`;
+        if (!grupo.flexSubdivisiones.has(flexKey)) {
+          grupo.flexSubdivisiones.set(flexKey, {
+            nombre: flexKey,
+            zonas: [],
+            totalOTs: 0,
+            zonasCriticas: 0
+          });
+        }
+        
+        const flexGrupo = grupo.flexSubdivisiones.get(flexKey);
+        flexGrupo.zonas.push(z);
+        flexGrupo.totalOTs += z.totalOTs;
+        if (z.criticidad === 'CRÍTICO') flexGrupo.zonasCriticas++;
+      }
+      
+      if (z.criticidad === 'CRÍTICO') {
+        grupo.esCritico = true;
+      }
+    });
+    
+    return Array.from(territoriosMap.values())
+      .sort((a, b) => b.totalOTs - a.totalOTs);
   }
 }
 
@@ -797,7 +790,7 @@ const Filters = {
     let filtered = rows.slice();
     
     const today = new Date();
-    today.setHours(0,0,0,0);
+    today.setHours(0, 0, 0, 0);
     
     filtered = filtered.filter(r => {
       const fecha = r['Fecha de creación'] || r['Fecha/Hora de apertura'] || r['Fecha de inicio'];
@@ -916,39 +909,33 @@ const Filters = {
 
 const UIRenderer = {
   renderStats(data) {
-  return `
-    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('total')">
-      <div class="stat-label">Total Órdenes</div>
-      <div class="stat-value">${NumberUtils.format(data.total)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('zonas')">
-      <div class="stat-label">Zonas Analizadas</div>
-      <div class="stat-value">${NumberUtils.format(data.zonas)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('territoriosCriticos')">
-      <div class="stat-label">Territorios Críticos</div>
-      <div class="stat-value">${NumberUtils.format(data.territoriosCriticos)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('ftth')">
-      <div class="stat-label">Zonas FTTH</div>
-      <div class="stat-value">${NumberUtils.format(data.ftth)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('alarmas')">
-      <div class="stat-label">Con Alarmas</div>
-      <div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div>
-    </div>
-
-    <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('nodosCriticos')">
-      <div class="stat-label">Nodos Críticos</div>
-      <div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div>
-    </div>
-  `;
-},
-
+    return `
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('total')">
+        <div class="stat-label">Total Órdenes</div>
+        <div class="stat-value">${NumberUtils.format(data.total)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('zonas')">
+        <div class="stat-label">Zonas Analizadas</div>
+        <div class="stat-value">${NumberUtils.format(data.zonas)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('territoriosCriticos')">
+        <div class="stat-label">Territorios Críticos</div>
+        <div class="stat-value">${NumberUtils.format(data.territoriosCriticos)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('ftth')">
+        <div class="stat-label">Zonas FTTH</div>
+        <div class="stat-value">${NumberUtils.format(data.ftth)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('alarmas')">
+        <div class="stat-label">Con Alarmas</div>
+        <div class="stat-value">${NumberUtils.format(data.conAlarmas)}</div>
+      </div>
+      <div class="stat-card clickable" style="cursor:pointer" onclick="filterByStat('nodosCriticos')">
+        <div class="stat-label">Nodos Críticos</div>
+        <div class="stat-value">${NumberUtils.format(data.nodosCriticos)}</div>
+      </div>
+    `;
+  },
   
   renderSparkline(counts, labels) {
     const max = Math.max(...counts, 1);
@@ -1080,7 +1067,7 @@ const UIRenderer = {
     
     const sorted = Array.from(edificios.values())
       .filter(e => e.casos.length >= 2)
-      .sort((a,b) => b.casos.length - a.casos.length)
+      .sort((a, b) => b.casos.length - a.casos.length)
       .slice(0, 50);
     
     if (!sorted.length) return '<div class="loading-message"><p>No hay edificios con 2+ incidencias</p></div>';
@@ -1146,7 +1133,7 @@ const UIRenderer = {
       });
     });
 
-    const zonas = Array.from(grupos.keys()).sort((a,b)=>a.localeCompare(b));
+    const zonas = Array.from(grupos.keys()).sort((a, b) => a.localeCompare(b));
     if (!zonas.length) {
       return '<div class="loading-message"><p>⚠️ No se encontraron equipos en las órdenes.</p></div>';
     }
@@ -1213,7 +1200,7 @@ const UIRenderer = {
       }
     });
 
-    const zonasFiltradas = Array.from(gruposFiltrados.keys()).sort((a,b)=>a.localeCompare(b));
+    const zonasFiltradas = Array.from(gruposFiltrados.keys()).sort((a, b) => a.localeCompare(b));
     
     if (zonasFiltradas.length === 0) {
       html += '<div class="loading-message"><p>No hay equipos que coincidan con los filtros seleccionados</p></div>';
@@ -1227,10 +1214,10 @@ const UIRenderer = {
     zonasFiltradas.forEach((z) => {
       const arr = gruposFiltrados.get(z) || [];
       const open = window.equiposOpen.has(z);
-      html += `<tr class="clickable" onclick="toggleEquiposGrupo('${z.replace(/'/g,"\\'")}')">
+      html += `<tr class="clickable" onclick="toggleEquiposGrupo('${z.replace(/'/g, "\\'")}')">
         <td><strong>${z || '-'}</strong></td>
         <td class="number">${arr.length}</td>
-        <td><button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="event.stopPropagation(); exportEquiposGrupoExcel('${z.replace(/'/g,"\\'")}', true)">📥 Exportar</button></td>
+        <td><button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="event.stopPropagation(); exportEquiposGrupoExcel('${z.replace(/'/g, "\\'")}', true)">📥 Exportar</button></td>
       </tr>`;
 
       if (open) {
@@ -1238,17 +1225,17 @@ const UIRenderer = {
         html += '<div class="table-container"><div class="table-wrapper"><table class="detail-table"><thead><tr>';
         html += '<th>Caso</th><th>Sistema</th><th>Serial</th><th>MAC</th><th>Tipo</th><th>Marca</th><th>Modelo</th>';
         html += '</tr></thead><tbody>';
-        arr.slice(0,1000).forEach(e => {
-          const badge = e.sistema==='OPEN' ? '<span class="badge badge-open">OPEN</span>'
-                       : e.sistema==='FAN' ? '<span class="badge badge-fan">FAN</span>' : '';
+        arr.slice(0, 1000).forEach(e => {
+          const badge = e.sistema === 'OPEN' ? '<span class="badge badge-open">OPEN</span>'
+                       : e.sistema === 'FAN' ? '<span class="badge badge-fan">FAN</span>' : '';
           html += `<tr>
-            <td style="font-family:monospace">${e.numCaso||''}</td>
+            <td style="font-family:monospace">${e.numCaso || ''}</td>
             <td>${badge}</td>
-            <td style="font-family:monospace">${e.serialNumber||''}</td>
-            <td style="font-family:monospace">${e.macAddress||''}</td>
-            <td>${e.tipo||''}</td>
-            <td>${e.marca||''}</td>
-            <td>${e.modelo||''}</td>
+            <td style="font-family:monospace">${e.serialNumber || ''}</td>
+            <td style="font-family:monospace">${e.macAddress || ''}</td>
+            <td>${e.tipo || ''}</td>
+            <td>${e.marca || ''}</td>
+            <td>${e.modelo || ''}</td>
           </tr>`;
         });
         html += '</tbody></table></div></div>';
@@ -1293,18 +1280,18 @@ function exportEquiposGrupoExcel(zona, useFiltered = false){
   
   if (!source) return toast('No hay datos de equipos');
   
-  const arr = source.get(zona)||[];
+  const arr = source.get(zona) || [];
   if (!arr.length) return toast('No hay equipos en esa zona');
   
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(arr);
-  XLSX.utils.book_append_sheet(wb, ws, `Equipos_${zona||'NA'}`);
+  XLSX.utils.book_append_sheet(wb, ws, `Equipos_${zona || 'NA'}`);
   
   const filterInfo = useFiltered && (Filters.equipoModelo.length > 0 || Filters.equipoMarca || Filters.equipoTerritorio)
     ? `_filtrado`
     : '';
   
-  XLSX.writeFile(wb, `Equipos_${zona||'NA'}${filterInfo}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `Equipos_${zona || 'NA'}${filterInfo}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast(`✅ Exportados ${arr.length} equipos de ${zona}`);
 }
 
@@ -1316,7 +1303,7 @@ function exportZonaExcel(zoneIdx) {
   const ws = XLSX.utils.json_to_sheet(zonaData.ordenesOriginales || zonaData.ordenes || []);
   XLSX.utils.book_append_sheet(wb, ws, `Zona_${zonaData.zona}`);
   
-  XLSX.writeFile(wb, `Zona_${zonaData.zona}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `Zona_${zonaData.zona}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast(`✅ Exportada zona ${zonaData.zona}`);
 }
 
@@ -1335,9 +1322,9 @@ function exportCMTSExcel(cmts) {
   }));
   
   const ws = XLSX.utils.json_to_sheet(zonasFlat);
-  XLSX.utils.book_append_sheet(wb, ws, `CMTS_${cmts.slice(0,20)}`);
+  XLSX.utils.book_append_sheet(wb, ws, `CMTS_${cmts.slice(0, 20)}`);
   
-  XLSX.writeFile(wb, `CMTS_${cmts.slice(0,20)}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `CMTS_${cmts.slice(0, 20)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   toast(`✅ Exportado CMTS ${cmts}`);
 }
 
@@ -1398,7 +1385,7 @@ async function loadFile(e, tipo) {
     statusEl.classList.add('loaded');
     
     const nombres = ['Consolidado 1', 'Consolidado 2', 'Nodos UP/DOWN', 'Alarmas FMS'];
-    toast(`${nombres[tipo-1]} cargado: ${result.rows} registros`);
+    toast(`${nombres[tipo - 1]} cargado: ${result.rows} registros`);
     
     if ((dataProcessor.consolidado1 || dataProcessor.consolidado2)) {
       document.getElementById('mergeStatus').style.display = 'flex';
@@ -1413,25 +1400,23 @@ async function loadFile(e, tipo) {
 function processData() {
   const merged = dataProcessor.merge();
   if (!merged.length) return;
-
+  
   const daysWindow = parseInt(document.getElementById('daysWindow').value);
-
+  
   const zones = dataProcessor.processZones(merged);
   allZones = dataProcessor.analyzeZones(zones, daysWindow);
   allCMTS = dataProcessor.analyzeCMTS(allZones);
-
-  // NUEVO: Analizar territorios
+  
   const territoriosAnalisis = dataProcessor.analyzeTerritorios(allZones);
   window.territoriosData = territoriosAnalisis;
-
+  
   currentData = {
     ordenes: merged,
     zonas: allZones
   };
-
+  
   populateFilters();
-
-  // Stats con TERRITORIOS CRÍTICOS
+  
   const stats = {
     total: allZones.reduce((sum, z) => sum + z.totalOTs, 0),
     zonas: allZones.length,
@@ -1440,11 +1425,11 @@ function processData() {
     conAlarmas: allZones.filter(z => z.tieneAlarma).length,
     nodosCriticos: allZones.filter(z => z.nodoEstado === 'critical').length
   };
-
+  
   document.getElementById('statsGrid').innerHTML = UIRenderer.renderStats(stats);
   document.getElementById('btnExportExcel').disabled = false;
   document.getElementById('btnExportExcelZonas').disabled = false;
-
+  
   let statusText = `✓ ${merged.length} órdenes procesadas (deduplicadas)`;
   if (dataProcessor.nodosData) {
     statusText += ` • ${dataProcessor.nodosMap.size} nodos integrados`;
@@ -1454,17 +1439,24 @@ function processData() {
   }
   statusText += ` • Ventana: ${daysWindow} días`;
   document.getElementById('mergeStatusText').textContent = statusText;
-
+  
   applyFilters();
 }
 
-
 function populateFilters() {
-  const territorios = [...new Set(currentData.ordenes.map(o => o['Territorio de servicio: Nombre']).filter(Boolean))];
+  const territorios = [...new Set(
+    currentData.ordenes
+      .map(o => o['Territorio de servicio: Nombre'])
+      .filter(Boolean)
+  )];
   const terrSelect = document.getElementById('filterTerritorio');
   terrSelect.innerHTML = '<option value="">Todos</option>' + territorios.sort().map(t => `<option value="${t}">${t}</option>`).join('');
   
-  const cmtsList = [...new Set(allZones.map(z => z.cmts).filter(Boolean))];
+  const cmtsList = [...new Set(
+    allZones
+      .map(z => z.cmts)
+      .filter(Boolean)
+  )];
   const cmtsSelect = document.getElementById('filterCMTS');
   cmtsSelect.innerHTML = '<option value="">Todos</option>' + cmtsList.sort().map(c => `<option value="${c}">${c}</option>`).join('');
 }
@@ -1494,10 +1486,13 @@ function applyFilters() {
   
   const cmtsFiltered = dataProcessor.analyzeCMTS(analyzed);
   
+  const territoriosAnalisis = dataProcessor.analyzeTerritorios(analyzed);
+  window.territoriosData = territoriosAnalisis;
+  
   const stats = {
     total: analyzed.reduce((sum, z) => sum + z.totalOTs, 0),
     zonas: analyzed.length,
-    criticas: analyzed.filter(z => z.criticidad === 'CRÍTICO').length,
+    territoriosCriticos: territoriosAnalisis.filter(t => t.esCritico).length,
     ftth: analyzed.filter(z => z.tipo === 'FTTH').length,
     conAlarmas: analyzed.filter(z => z.tieneAlarma).length,
     nodosCriticos: analyzed.filter(z => z.nodoEstado === 'critical').length
@@ -1510,8 +1505,8 @@ function applyFilters() {
   allZones = analyzed;
   allCMTS = cmtsFiltered;
   
-  document.getElementById('btnExportExcel').disabled = analyzed.length===0 && filtered.length===0;
-  document.getElementById('btnExportExcelZonas').disabled = analyzed.length===0;
+  document.getElementById('btnExportExcel').disabled = analyzed.length === 0 && filtered.length === 0;
+  document.getElementById('btnExportExcelZonas').disabled = analyzed.length === 0;
   
   document.getElementById('zonasPanel').innerHTML = UIRenderer.renderZonas(analyzed);
   document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
@@ -1548,35 +1543,33 @@ function filterByStat(statType) {
     case 'zonas':
       toast('🔄 Mostrando todas las zonas (filtros reseteados)');
       break;
-
+    
     case 'territoriosCriticos':
-      // Filtrar por territorios críticos
       if (!window.territoriosData) {
         toast('❌ No hay datos de territorios disponibles');
         break;
       }
-
+      
       const territoriosCriticos = window.territoriosData.filter(t => t.esCritico);
       if (territoriosCriticos.length === 0) {
         toast('✅ No hay territorios críticos en este momento');
         break;
       }
-
-      // Mostrar modal con detalle de territorios críticos
+      
       showTerritoriosCriticosModal(territoriosCriticos);
-      return; // No aplicar filtros, sólo mostrar modal
-
+      return;
+    
     case 'ftth':
       document.getElementById('filterFTTH').checked = true;
       document.getElementById('filterExcludeFTTH').checked = false;
       toast('🔌 Mostrando solo zonas FTTH');
       break;
-
+    
     case 'alarmas':
       document.getElementById('filterAlarma').value = 'con-alarma';
       toast('🚨 Mostrando zonas con alarmas activas');
       break;
-
+    
     case 'nodosCriticos':
       document.getElementById('filterNodoEstado').value = 'critical';
       toast('🟥 Mostrando zonas con NODOS CRÍTICOS');
@@ -1584,6 +1577,108 @@ function filterByStat(statType) {
   }
 
   applyFilters();
+}
+
+function showTerritoriosCriticosModal(territoriosCriticos) {
+  let html = '<div class="territorios-criticos-container">';
+  html += '<h3 style="color: #D13438; margin-bottom: 20px;">🚨 Territorios Críticos Detectados</h3>';
+  
+  territoriosCriticos.forEach((t, idx) => {
+    html += `<div class="territorio-critico-card" style="
+      background: white;
+      border: 2px solid #D13438;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 8px rgba(209, 52, 56, 0.15);
+    ">`;
+    
+    html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">`;
+    html += `<h4 style="color: #0078D4; margin: 0; font-size: 1.1rem;">${t.territorio}</h4>`;
+    html += `<span class="badge badge-critical" style="font-size: 0.85rem;">CRÍTICO</span>`;
+    html += `</div>`;
+    
+    html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">`;
+    html += `<div><strong>Total OTs:</strong> ${t.totalOTs}</div>`;
+    html += `<div><strong>Zonas Críticas:</strong> ${t.zonasCriticas}</div>`;
+    html += `<div><strong>Con Alarmas:</strong> ${t.zonasConAlarma}</div>`;
+    html += `<div><strong>Total Zonas:</strong> ${t.zonas.length}</div>`;
+    html += `</div>`;
+    
+    if (t.flexSubdivisiones.size > 0) {
+      html += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #E1DFDD;">`;
+      html += `<strong style="color: #605E5C; font-size: 0.9rem;">📍 Subdivisiones:</strong>`;
+      html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px;">`;
+      
+      Array.from(t.flexSubdivisiones.values()).forEach(flex => {
+        const badgeColor = flex.zonasCriticas > 0 ? '#D13438' : '#107C10';
+        html += `<div style="
+          background: ${badgeColor}15;
+          border: 1px solid ${badgeColor};
+          border-radius: 6px;
+          padding: 8px;
+          text-align: center;
+        ">`;
+        html += `<div style="font-weight: 600; color: ${badgeColor};">${flex.nombre}</div>`;
+        html += `<div style="font-size: 0.75rem; color: #605E5C;">${flex.zonas.length} zonas</div>`;
+        html += `<div style="font-size: 0.75rem; color: #605E5C;">${flex.totalOTs} OTs</div>`;
+        if (flex.zonasCriticas > 0) {
+          html += `<div style="font-size: 0.75rem; color: ${badgeColor};">⚠️ ${flex.zonasCriticas} críticas</div>`;
+        }
+        html += `</div>`;
+      });
+      
+      html += `</div></div>`;
+    }
+    
+    html += `<div style="margin-top: 12px;">`;
+    html += `<button class="btn btn-primary" style="font-size: 0.85rem; padding: 8px 16px;" 
+              onclick="filtrarPorTerritorio('${t.territorio.replace(/'/g, "\\'")}')">
+      🔍 Ver Zonas de ${t.territorio}
+    </button>`;
+    html += `</div>`;
+    
+    html += `</div>`;
+  });
+  
+  html += `<div style="text-align: center; margin-top: 20px;">`;
+  html += `<button class="btn btn-secondary" onclick="closeTerritoriosCriticosModal()">Cerrar</button>`;
+  html += `</div>`;
+  
+  html += '</div>';
+  
+  document.getElementById('modalTitle').textContent = `📊 Territorios Críticos (${territoriosCriticos.length})`;
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalFilters').style.display = 'none';
+  document.getElementById('modalFooter').innerHTML = '';
+  
+  document.getElementById('modalBackdrop').classList.add('show');
+  document.body.classList.add('modal-open');
+}
+
+function closeTerritoriosCriticosModal() {
+  closeModal();
+}
+
+function filtrarPorTerritorio(territorioNormalizado) {
+  closeModal();
+  
+  const territoriosOriginales = [...new Set(
+    currentData.ordenes
+      .map(o => o['Territorio de servicio: Nombre'])
+      .filter(t => t && TerritorioUtils.normalizar(t) === territorioNormalizado)
+  )];
+  
+  if (territoriosOriginales.length === 0) {
+    toast('❌ No se encontraron zonas para este territorio');
+    return;
+  }
+  
+  document.getElementById('filterTerritorio').value = territoriosOriginales[0];
+  toast(`🔍 Filtrando por territorio: ${territorioNormalizado}`);
+  applyFilters();
+  
+  switchTab('zonas');
 }
 
 function switchTab(tabName) {
@@ -1691,11 +1786,15 @@ function openModal(zoneIdx) {
   const ordenesParaModal = currentZone.ordenesOriginales || currentZone.ordenes;
   currentZone.ordenes = ordenesParaModal;
   
-  const dias = [...new Set(ordenesParaModal.map(o => {
-    const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
-    const dt = DateUtils.parse(fecha);
-    return dt ? DateUtils.format(dt) : null;
-  }).filter(Boolean))].sort();
+  const dias = [...new Set(
+    ordenesParaModal
+      .map(o => {
+        const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
+        const dt = DateUtils.parse(fecha);
+        return dt ? DateUtils.format(dt) : null;
+      })
+      .filter(Boolean)
+  )].sort();
   
   const diaSelect = document.getElementById('filterDia');
   diaSelect.innerHTML = '<option value="">Todos los días</option>' + dias.map(d => `<option value="${d}">${d}</option>`).join('');
@@ -1704,111 +1803,6 @@ function openModal(zoneIdx) {
   
   document.getElementById('modalBackdrop').classList.add('show');
   document.body.classList.add('modal-open');
-}
-function showTerritoriosCriticosModal(territoriosCriticos) {
-  let html = '<div class="territorios-criticos-container">';
-  html += '<h3 style="color: #D13438; margin-bottom: 20px;">🚨 Territorios Críticos Detectados</h3>';
-
-  territoriosCriticos.forEach(t => {
-    html += `<div class="territorio-critico-card" style="
-      background: white;
-      border: 2px solid #D13438;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-      box-shadow: 0 4px 8px rgba(209, 52, 56, 0.15);
-    ">`;
-
-    html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">`;
-    html += `<h4 style="color: #0078D4; margin: 0; font-size: 1.1rem;">${t.territorio}</h4>`;
-    html += `<span class="badge badge-critical" style="font-size: 0.85rem;">CRÍTICO</span>`;
-    html += `</div>`;
-
-    html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px;">`;
-    html += `<div><strong>Total OTs:</strong> ${t.totalOTs}</div>`;
-    html += `<div><strong>Zonas Críticas:</strong> ${t.zonasCriticas}</div>`;
-    html += `<div><strong>Con Alarmas:</strong> ${t.zonasConAlarma}</div>`;
-    html += `<div><strong>Total Zonas:</strong> ${t.zonas.length}</div>`;
-    html += `</div>`;
-
-    // Subdivisiones Flex
-    if (t.flexSubdivisiones.size > 0) {
-      html += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #E1DFDD;">`;
-      html += `<strong style="color: #605E5C; font-size: 0.9rem;">📍 Subdivisiones:</strong>`;
-      html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-top: 8px;">`;
-
-      Array.from(t.flexSubdivisiones.values()).forEach(flex => {
-        const badgeColor = flex.zonasCriticas > 0 ? '#D13438' : '#107C10';
-        html += `<div style="
-          background: ${badgeColor}15;
-          border: 1px solid ${badgeColor};
-          border-radius: 6px;
-          padding: 8px;
-          text-align: center;
-        ">`;
-        html += `<div style="font-weight: 600; color: ${badgeColor};">${flex.nombre}</div>`;
-        html += `<div style="font-size: 0.75rem; color: #605E5C;">${flex.zonas.length} zonas</div>`;
-        html += `<div style="font-size: 0.75rem; color: #605E5C;">${flex.totalOTs} OTs</div>`;
-        if (flex.zonasCriticas > 0) {
-          html += `<div style="font-size: 0.75rem; color: ${badgeColor};">⚠️ ${flex.zonasCriticas} críticas</div>`;
-        }
-        html += `</div>`;
-      });
-
-      html += `</div></div>`;
-    }
-
-    html += `<div style="margin-top: 12px;">`;
-    html += `<button class="btn btn-primary" style="font-size: 0.85rem; padding: 8px 16px;"
-              onclick="filtrarPorTerritorio('${t.territorio.replace(/'/g, "\\'")}')">
-       🔍 Ver Zonas de ${t.territorio}
-     </button>`;
-    html += `</div>`;
-
-    html += `</div>`;
-  });
-
-  html += `<div style="text-align: center; margin-top: 20px;">`;
-  html += `<button class="btn btn-secondary" onclick="closeTerritoriosCriticosModal()">Cerrar</button>`;
-  html += `</div>`;
-
-  html += '</div>';
-
-  document.getElementById('modalTitle').textContent = `📊 Territorios Críticos (${territoriosCriticos.length})`;
-  document.getElementById('modalBody').innerHTML = html;
-  document.getElementById('modalFilters').style.display = 'none';
-  document.getElementById('modalFooter').innerHTML = '';
-
-  document.getElementById('modalBackdrop').classList.add('show');
-  document.body.classList.add('modal-open');
-}
-
-function closeTerritoriosCriticosModal() {
-  closeModal();
-}
-
-function filtrarPorTerritorio(territorioNormalizado) {
-  closeModal();
-
-  // Buscar el territorio original que coincida
-  const territoriosOriginales = [...new Set(
-    currentData.ordenes
-      .map(o => o['Territorio de servicio: Nombre'])
-      .filter(t => t && TerritorioUtils.normalizar(t) === territorioNormalizado)
-  )];
-
-  if (territoriosOriginales.length === 0) {
-    toast('❌ No se encontraron zonas para este territorio');
-    return;
-  }
-
-  // Si hay múltiples (Flex 1/2/3), uso el primero
-  document.getElementById('filterTerritorio').value = territoriosOriginales[0];
-  toast(`🔍 Filtrando por territorio: ${territorioNormalizado}`);
-  applyFilters();
-
-  // Cambiar a la pestaña de Zonas
-  switchTab('zonas');
 }
 
 function openCMTSDetail(cmts) {
@@ -2061,7 +2055,7 @@ function exportBEFAN() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `BEFAN_${currentZone.zona}_${new Date().toISOString().slice(0,10)}.txt`;
+    a.download = `BEFAN_${currentZone.zona}_${new Date().toISOString().slice(0, 10)}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2117,13 +2111,13 @@ function exportExcelVista(){
 
   if (window.equiposPorZona && window.equiposPorZona.size){
     const todos = [];
-    window.equiposPorZona.forEach((arr, zona)=>{
-      arr.forEach(it=>todos.push({...it, zona}));
+    window.equiposPorZona.forEach((arr, zona) => {
+      arr.forEach(it => todos.push({ ...it, zona }));
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(todos), 'Equipos');
   }
 
-  const fecha = new Date().toISOString().slice(0,10);
+  const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `Vista_Filtrada_${fecha}.xlsx`);
   toast('✓ Vista filtrada exportada');
 }
@@ -2150,7 +2144,7 @@ function exportExcelZonasCrudo(){
     Max_Dia: z.maxDia
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zonasData), 'Zonas');
-  const fecha = new Date().toISOString().slice(0,10);
+  const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `Zonas_Crudo_${fecha}.xlsx`);
   toast('✓ Zonas exportadas');
 }
@@ -2161,20 +2155,20 @@ function exportModalDetalleExcel(){
 
   if (title.startsWith('Detalle: ') && window.currentZone){
     const ordenes = window.currentZone.ordenes || [];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordenes), `Zona_${window.currentZone.zona||'NA'}`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ordenes), `Zona_${window.currentZone.zona || 'NA'}`);
   } else if (title.startsWith('Zonas del CMTS: ')){
-    const cmts = title.replace('Zonas del CMTS: ','').trim();
-    const data = (window.currentCMTSData||[]).find(c=>c.cmts===cmts);
+    const cmts = title.replace('Zonas del CMTS: ', '').trim();
+    const data = (window.currentCMTSData || []).find(c => c.cmts === cmts);
     if (!data) return toast('Sin datos de CMTS');
-    const zonasFlat = data.zonas.map(z=>({
+    const zonasFlat = data.zonas.map(z => ({
       Zona: z.zona, Tipo: z.tipo, Total_OTs: z.totalOTs, Ingreso_N: z.ingresoN, Ingreso_N1: z.ingresoN1, Estado_Nodo: z.nodoEstado
     }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zonasFlat), `CMTS_${cmts.slice(0,20)}`);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zonasFlat), `CMTS_${cmts.slice(0, 20)}`);
   } else {
-    const edTitle = document.getElementById('edificioModalTitle')?.textContent||'';
+    const edTitle = document.getElementById('edificioModalTitle')?.textContent || '';
     if (edTitle.startsWith('🏢 Edificio: ') && window.edificiosData){
-      const dir = edTitle.replace('🏢 Edificio: ','').trim();
-      const e = window.edificiosData.find(x=>x.direccion===dir);
+      const dir = edTitle.replace('🏢 Edificio: ', '').trim();
+      const e = window.edificiosData.find(x => x.direccion === dir);
       if (!e) return toast('Sin datos del edificio');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(e.casos), 'Edificio_OTs');
     } else {
@@ -2182,23 +2176,24 @@ function exportModalDetalleExcel(){
     }
   }
 
-  const fecha = new Date().toISOString().slice(0,10);
+  const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `Detalle_${fecha}.xlsx`);
   toast('✓ Detalle exportado');
 }
 
 function debounce(func, wait) {
   let timeout;
-  return function(...args) {
+  return function (...args) {
     clearTimeout(timeout);
     timeout = setTimeout(() => func.apply(this, args), wait);
   };
 }
 
-console.log('✅ Panel v4.9 + TERRITORIOS CRÍTICOS inicializado');
-console.log('🎯 NUEVA FUNCIONALIDAD:');
-console.log('   • Territorios Críticos en lugar de Zonas Críticas');
-console.log('   • Agrupación automática de Flex 1, 2, 3');
-console.log('   • Detalle de subdivisiones mantenido');
-console.log('   • Modal interactivo con territorios críticos');
-
+console.log('✅ Panel v5.0 COMPLETO inicializado');
+console.log('🎯 FUNCIONALIDADES:');
+console.log('   • Territorios Críticos con agrupación Flex');
+console.log('   • Filtros múltiples de equipos (modelo/marca/territorio)');
+console.log('   • Stats clickeables con modales interactivos');
+console.log('   • Exportaciones completas (Zonas/CMTS/Equipos/BEFAN)');
+console.log('   • Planillas funcionales en nueva ventana');
+console.log('📊 Estados activos:', CONFIG.estadosPermitidos);
