@@ -1,4 +1,4 @@
-console.log('🚀 Panel v4.9 MEJORADO - Filtros de equipos + Ordenamiento por ingresos');
+console.log('🚀 Panel v5.0 COMPLETO - Sparklines normalizadas + histórico del modal unificado');
 
 (function(){
   const CONFIG = {

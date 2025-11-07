@@ -530,6 +530,15 @@ td.center { text-align: center; }
   font-size: 0.75rem;
   color: var(--text-secondary);
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-style: italic;
 }
 
 .modal-backdrop {
