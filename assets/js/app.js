@@ -779,6 +779,7 @@ const dataProcessor = new DataProcessor();
 
 const Filters = {
   catec: false,
+  excludeCatec: false,
   ftth: false,
   excludeFTTH: false,
   nodoEstado: '',
@@ -809,7 +810,7 @@ const Filters = {
       return daysAgo <= this.days;
     });
     
-   if (!this.showAllStates) {
+    if (!this.showAllStates) {
       const estadosOcultosNorm = (CONFIG.estadosOcultosPorDefecto || []).map(normalizeEstado);
       const estadosPermitidosNorm = (CONFIG.estadosPermitidos || []).map(normalizeEstado);
 
@@ -828,10 +829,22 @@ const Filters = {
       });
     }
     
-    if (this.catec) {
+    const catecActive = this.catec;
+    const excludeCatecActive = !catecActive && this.excludeCatec;
+
+    if (catecActive) {
       filtered = filtered.filter(r => {
         const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
-        return tipo.toUpperCase().includes('CATEC');
+        const upperTipo = String(tipo).toUpperCase();
+        return upperTipo.includes('CATEC');
+      });
+    }
+
+    if (excludeCatecActive) {
+      filtered = filtered.filter(r => {
+        const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
+        const upperTipo = String(tipo).toUpperCase();
+        return !upperTipo.includes('CATEC');
       });
     }
     
@@ -1384,7 +1397,24 @@ function setupEventListeners() {
   document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
   document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
   
-  document.getElementById('filterCATEC').addEventListener('change', applyFilters);
+  const filterCatec = document.getElementById('filterCATEC');
+  const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
+
+  if (filterCatec && filterExcludeCatec) {
+    filterCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterExcludeCatec.checked = false;
+      }
+      applyFilters();
+    });
+
+    filterExcludeCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterCatec.checked = false;
+      }
+      applyFilters();
+    });
+  }
   document.getElementById('showAllStates').addEventListener('change', applyFilters);
   document.getElementById('filterFTTH').addEventListener('change', e => {
     if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
@@ -1504,7 +1534,11 @@ function populateFilters() {
 function applyFilters() {
   if (!currentData) return;
   
-  Filters.catec = document.getElementById('filterCATEC').checked;
+  const catecEl = document.getElementById('filterCATEC');
+  const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+
+  Filters.catec = catecEl ? catecEl.checked : false;
+  Filters.excludeCatec = excludeCatecEl ? excludeCatecEl.checked : false;
   Filters.showAllStates = document.getElementById('showAllStates').checked;
   Filters.ftth = document.getElementById('filterFTTH').checked;
   Filters.excludeFTTH = document.getElementById('filterExcludeFTTH').checked;
@@ -1555,7 +1589,11 @@ function applyFilters() {
 }
 
 function resetFiltersState() {
-  document.getElementById('filterCATEC').checked = false;
+  const catecEl = document.getElementById('filterCATEC');
+  const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+
+  if (catecEl) catecEl.checked = false;
+  if (excludeCatecEl) excludeCatecEl.checked = false;
   document.getElementById('showAllStates').checked = false;
   document.getElementById('filterFTTH').checked = false;
   document.getElementById('filterExcludeFTTH').checked = false;

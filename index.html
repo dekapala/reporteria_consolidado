@@ -22,7 +22,7 @@
           </svg>
           <div>
             <h1>📊 Panel Fulfillment <span class="version-badge">v5.0 COMPLETO</span></h1>
-            <p>✨ Sparklines normalizadas • Históricos consistentes • Alarmas FMS • Equipos</p>
+            <p>✨ Sparklines normalizadas • Históricos consistentes • Alarmas FMS • Equipos • Filtro anti-CATEC</p>
           </div>
         </div>
         <div class="header-actions">
@@ -36,7 +36,7 @@
               </div>
             </div>
           </div>
-          <button class="btn-help" onclick="toast('💡 v5.0 Completo: Sparklines normalizadas + histórico del modal unificado')">
+          <button class="btn-help" onclick="toast('💡 v5.0 Completo: Sparklines normalizadas + histórico del modal unificado + filtro anti-CATEC (24h)')">
             💡 Info
           </button>
         </div>
@@ -94,6 +94,13 @@
         <label class="checkbox-label">
           <input type="checkbox" id="filterCATEC">
           <span>Solo CATEC</span>
+        </label>
+        <label class="toggle-control">
+          <input type="checkbox" id="filterExcludeCATEC">
+          <span class="toggle-track">
+            <span class="toggle-thumb"></span>
+          </span>
+          <span class="toggle-text">Excluir CATEC</span>
         </label>
         <label class="checkbox-label">
           <input type="checkbox" id="showAllStates">
