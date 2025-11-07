@@ -1,6 +1,6 @@
 console.log('🚀 Panel v5.0 COMPLETO - Territorios Críticos + Filtros Equipos + Stats Clickeables');
 
-const CONFIG = { 
+const CONFIG = {
   codigo_befan: 'FR461',
   defaultDays: 3,
   estadosPermitidos: [
@@ -200,7 +200,7 @@ document.addEventListener('click', (e) => {
 
 function openPlanillasNewTab() {
   document.getElementById('utilitiesMenu').classList.remove('show');
-  
+
   const newWindow = window.open('', '_blank', 'width=1000,height=800');
   
   const planillasHTML = `<!DOCTYPE html>
@@ -318,6 +318,187 @@ Generado desde Panel Fulfillment v5.0\`;
 
   newWindow.document.write(planillasHTML);
   newWindow.document.close();
+}
+
+function openUsefulLinks() {
+  document.getElementById('utilitiesMenu').classList.remove('show');
+
+  const win = window.open('', '_blank', 'width=1200,height=860,scrollbars=yes');
+  if (!win) {
+    toast('🔒 Habilitá las ventanas emergentes para ver los links útiles.');
+    return;
+  }
+
+  const baseHref = new URL('.', window.location.href).href;
+  const sections = [
+    {
+      title: 'Panel Fulfillment',
+      description: 'Accesos clave al entorno de análisis y soporte del equipo.',
+      links: [
+        { label: 'Analisis', url: 'http://10.120.52.24/analisis/', note: 'Panel principal de gestión' },
+        { label: 'planillas', url: 'http://10.120.52.24/pagmdr/', note: 'Plantillas de carga diaria' },
+        { label: 'Herramientas', url: 'http://10.120.52.24/analisis/herramientas_internas/', note: 'Utilidades internas' }
+      ]
+    },
+    {
+      title: 'Gestión & Monitoreo',
+      description: 'Aplicaciones operativas para seguimiento y control.',
+      links: [
+        { label: 'ICD', url: 'https://teco.sccd.ibmserviceengage.com/maximo_ICD/ui/login', note: 'Incidentes y órdenes' },
+        { label: 'ftth 1', url: 'http://10.9.44.132/symphonica/v2_10/#/', note: 'Symphonica FTTH' },
+        { label: 'CCIP', url: 'https://ccip/index.php/login', note: 'Capa de Control IP' },
+        { label: 'iTracker', url: 'https://itracker.telecom.com.ar/?L=index&m=menu', note: 'Seguimiento tickets' },
+        { label: 'PortalNOC', url: 'https://supervision/portalNOC/login.asp', note: 'Monitoreo NOC' },
+        { label: 'UnMacMe', url: 'https://unmacme.telecom.com.ar/', note: 'Gestión MACs cablemodem' },
+        { label: 'TAU', url: 'https://tau.telecom.com.ar/#/ppf/home', note: 'Portal TAU' },
+        { label: 'ServAssure NXT', url: 'https://nxt.telecom.arg.telecom.com.ar:8443/nxt-ui/#/search', note: 'Monitoreo HFC' },
+        { label: 'FMS', url: 'http://fmbrms-prod.corp.cablevision.com.ar:8180/fms/web/#/login', note: 'Alarmas FMS' },
+        { label: 'BeFan', url: 'https://snap.telecom.com.ar/befan/index.html#/signin', note: 'Gestión BeFan' }
+      ]
+    },
+    {
+      title: 'Recursos técnicos',
+      description: 'Accesos de referencia para FTTH y bases de consulta.',
+      links: [
+        { label: 'cei ftth', url: 'http://pwxdatadb3/welcome/', note: 'Portal PWX CEI' },
+        { label: 'Gpon Status', url: 'http://10.9.44.132/gpon_status/v1_0/inventario/#', note: 'Inventario GPON' },
+        { label: 'Buscador Sector Operativo/Central', url: 'https://cablevisionfibertel.sharepoint.com/sites/FIELDSERVICE/formdec/SitePages/Buscador-por-Sector-Operativo.aspx', note: 'SharePoint Field Service' }
+      ]
+    }
+  ];
+
+  const sectionsHtml = sections.map(section => `
+    <section class="links-section">
+      <div class="links-section-header">
+        <h2>${section.title}</h2>
+        ${section.description ? `<p>${section.description}</p>` : ''}
+      </div>
+      <div class="links-grid">
+        ${section.links.map(link => `
+          <a class="link-card" href="${link.url}" target="_blank" rel="noopener">
+            <span class="link-title">${link.label}</span>
+            ${link.note ? `<span class="link-note">${link.note}</span>` : ''}
+          </a>
+        `).join('')}
+      </div>
+    </section>
+  `).join('');
+
+  win.document.write(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="${baseHref}">
+  <title>🔗 Links útiles - Panel Fulfillment</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    .links-wrapper {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 32px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 2.25rem;
+      color: #38bdf8;
+    }
+    header p {
+      margin: 0;
+      color: #cbd5f5;
+      font-size: 0.95rem;
+      max-width: 560px;
+    }
+    .links-section {
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 18px;
+      padding: 24px 24px 28px;
+      margin-bottom: 24px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.55);
+    }
+    .links-section-header h2 {
+      margin: 0;
+      font-size: 1.4rem;
+      color: #f8fafc;
+    }
+    .links-section-header p {
+      margin: 6px 0 0 0;
+      color: #cbd5f5;
+      font-size: 0.95rem;
+    }
+    .links-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .link-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 14px;
+      padding: 16px;
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.18s ease, border-color 0.18s ease;
+    }
+    .link-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(56, 189, 248, 0.6);
+      box-shadow: 0 12px 25px rgba(56, 189, 248, 0.25);
+    }
+    .link-title {
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: #f8fafc;
+    }
+    .link-note {
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    footer {
+      margin-top: 32px;
+      font-size: 0.8rem;
+      color: rgba(148, 163, 184, 0.7);
+      text-align: center;
+    }
+    @media (max-width: 640px) {
+      header h1 { font-size: 1.8rem; }
+      .links-section { padding: 20px 18px 24px; }
+      .links-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="links-wrapper">
+    <header>
+      <h1>🔗 Links útiles</h1>
+      <p>Accesos verificados en las últimas 24 horas para acelerar el soporte operativo y técnico del equipo.</p>
+    </header>
+    ${sectionsHtml}
+    <footer>Actualizado ${new Date().toLocaleDateString('es-AR')} • Panel Fulfillment v5.0</footer>
+  </div>
+</body>
+</html>`);
+  win.document.close();
 }
 
 class DataProcessor {
@@ -781,8 +962,17 @@ class DataProcessor {
 
 const dataProcessor = new DataProcessor();
 
+const zoneFilterState = {
+  allOptions: [],
+  filteredOptions: [],
+  selected: new Set(),
+  search: '',
+  open: false
+};
+
 const Filters = {
   catec: false,
+  excludeCatec: false,
   ftth: false,
   excludeFTTH: false,
   nodoEstado: '',
@@ -798,6 +988,7 @@ const Filters = {
   equipoMarca: '',
   equipoTerritorio: '',
   criticidad: '',
+  selectedZonas: [],
   
   apply(rows) {
     let filtered = rows.slice();
@@ -813,7 +1004,7 @@ const Filters = {
       return daysAgo <= this.days;
     });
     
-   if (!this.showAllStates) {
+    if (!this.showAllStates) {
       const estadosOcultosNorm = (CONFIG.estadosOcultosPorDefecto || []).map(normalizeEstado);
       const estadosPermitidosNorm = (CONFIG.estadosPermitidos || []).map(normalizeEstado);
 
@@ -832,10 +1023,22 @@ const Filters = {
       });
     }
     
-    if (this.catec) {
+    const catecActive = this.catec;
+    const excludeCatecActive = !catecActive && this.excludeCatec;
+
+    if (catecActive) {
       filtered = filtered.filter(r => {
         const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
-        return tipo.toUpperCase().includes('CATEC');
+        const upperTipo = String(tipo).toUpperCase();
+        return upperTipo.includes('CATEC');
+      });
+    }
+
+    if (excludeCatecActive) {
+      filtered = filtered.filter(r => {
+        const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
+        const upperTipo = String(tipo).toUpperCase();
+        return !upperTipo.includes('CATEC');
       });
     }
     
@@ -870,7 +1073,7 @@ const Filters = {
     
     if (this.quickSearch) {
       const queries = this.quickSearch.split(';').map(q => q.trim()).filter(Boolean);
-      
+
       filtered = filtered.filter(r => {
         const searchable = [
           r['Zona Tecnica HFC'],
@@ -888,10 +1091,19 @@ const Filters = {
         }
       });
     }
-    
+
+    if (this.selectedZonas && this.selectedZonas.length) {
+      const zonesSet = new Set(this.selectedZonas);
+
+      filtered = filtered.filter(r => {
+        const { zonaPrincipal } = dataProcessor.getZonaPrincipal(r);
+        return zonaPrincipal && zonesSet.has(zonaPrincipal);
+      });
+    }
+
     return filtered;
   },
-  
+
   applyToZones(zones) {
     let filtered = zones.slice();
 
@@ -919,7 +1131,12 @@ const Filters = {
         filtered = filtered.filter(z => !z.tieneAlarma);
       }
     }
-    
+
+    if (this.selectedZonas && this.selectedZonas.length) {
+      const zonesSet = new Set(this.selectedZonas);
+      filtered = filtered.filter(z => zonesSet.has(z.zona));
+    }
+
     if (this.ordenarPorIngreso === 'desc') {
       filtered.sort((a, b) => b.totalOTs - a.totalOTs);
     } else if (this.ordenarPorIngreso === 'asc') {
@@ -929,6 +1146,214 @@ const Filters = {
     return filtered;
   }
 };
+
+function initializeZoneFilterOptions(zones) {
+  const unique = Array.from(new Set((zones || []).filter(Boolean)));
+  unique.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+  zoneFilterState.allOptions = unique;
+  zoneFilterState.filteredOptions = unique.slice();
+  zoneFilterState.selected = new Set();
+  zoneFilterState.search = '';
+
+  const searchInput = document.getElementById('zoneFilterSearch');
+  if (searchInput) searchInput.value = '';
+
+  renderZoneFilterOptions();
+  updateZoneFilterSummary();
+  Filters.selectedZonas = [];
+}
+
+function renderZoneFilterOptions() {
+  const container = document.getElementById('zoneFilterOptions');
+  if (!container) return;
+
+  if (!zoneFilterState.allOptions.length) {
+    container.innerHTML = '<div class="zone-multiselect__empty">Cargá los reportes para habilitar el filtro por zonas</div>';
+    return;
+  }
+
+  if (!zoneFilterState.filteredOptions.length) {
+    container.innerHTML = '<div class="zone-multiselect__empty">No hay coincidencias para la búsqueda actual</div>';
+    return;
+  }
+
+  const optionsHtml = zoneFilterState.filteredOptions.map(z => {
+    const checked = zoneFilterState.selected.has(z) ? 'checked' : '';
+    return `<label class="zone-option"><input type="checkbox" value="${z}" ${checked}> <span>${z}</span></label>`;
+  }).join('');
+
+  container.innerHTML = optionsHtml;
+}
+
+function updateZoneFilterSummary() {
+  const summaryEl = document.getElementById('zoneFilterSummary');
+  const trigger = document.getElementById('zoneFilterTrigger');
+  if (!summaryEl) return;
+
+  const hasOptions = zoneFilterState.allOptions.length > 0;
+  if (trigger) trigger.disabled = !hasOptions;
+
+  if (!hasOptions) {
+    summaryEl.textContent = 'Sin datos (carga reportes)';
+    summaryEl.title = 'Carga los reportes para habilitar el filtro por zonas';
+    return;
+  }
+
+  const count = zoneFilterState.selected.size;
+
+  if (count === 0) {
+    summaryEl.textContent = 'Todas las zonas';
+    summaryEl.title = 'Mostrar todas las zonas disponibles';
+  } else if (count === 1) {
+    const [only] = Array.from(zoneFilterState.selected);
+    summaryEl.textContent = only;
+    summaryEl.title = only;
+  } else {
+    summaryEl.textContent = `${count} zonas seleccionadas`;
+    const listPreview = Array.from(zoneFilterState.selected).slice(0, 8).join(', ');
+    summaryEl.title = listPreview;
+  }
+}
+
+function toggleZoneFilter(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const container = document.getElementById('zoneFilter');
+  if (!container) return;
+
+  const willOpen = !container.classList.contains('open');
+  if (willOpen) {
+    container.classList.add('open');
+    zoneFilterState.open = true;
+    renderZoneFilterOptions();
+
+    setTimeout(() => {
+      const searchInput = document.getElementById('zoneFilterSearch');
+      if (searchInput) {
+        searchInput.focus();
+        if (zoneFilterState.search) {
+          const pos = zoneFilterState.search.length;
+          searchInput.setSelectionRange(pos, pos);
+        }
+      }
+    }, 0);
+  } else {
+    closeZoneFilter();
+  }
+}
+
+function closeZoneFilter() {
+  const container = document.getElementById('zoneFilter');
+  if (!container) return;
+  container.classList.remove('open');
+  zoneFilterState.open = false;
+}
+
+function handleZoneFilterOutsideClick(event) {
+  const container = document.getElementById('zoneFilter');
+  if (!container) return;
+  if (!container.contains(event.target)) {
+    closeZoneFilter();
+  }
+}
+
+function onZoneFilterSearch(event) {
+  const value = event.target.value || '';
+  zoneFilterState.search = value;
+
+  if (!zoneFilterState.allOptions.length) {
+    renderZoneFilterOptions();
+    return;
+  }
+
+  const normalizedTerm = TextUtils.normalize(value);
+  if (!normalizedTerm) {
+    zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+  } else {
+    zoneFilterState.filteredOptions = zoneFilterState.allOptions.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
+  }
+
+  renderZoneFilterOptions();
+}
+
+function onZoneOptionChange(event) {
+  const target = event.target;
+  if (!target || target.type !== 'checkbox') return;
+
+  const zone = target.value;
+  if (!zone) return;
+
+  if (target.checked) {
+    zoneFilterState.selected.add(zone);
+  } else {
+    zoneFilterState.selected.delete(zone);
+  }
+
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+  updateZoneFilterSummary();
+  applyFilters();
+}
+
+function selectAllZones(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  if (!zoneFilterState.allOptions.length) return;
+
+  const hasSearch = Boolean(zoneFilterState.search);
+  const source = hasSearch ? zoneFilterState.filteredOptions : zoneFilterState.allOptions;
+  if (!source.length) return;
+
+  source.forEach(z => zoneFilterState.selected.add(z));
+
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+  renderZoneFilterOptions();
+  updateZoneFilterSummary();
+  applyFilters();
+}
+
+function resetZoneFilterState(options = {}) {
+  const { apply = false, keepSearch = false } = options;
+
+  zoneFilterState.selected = new Set();
+
+  if (!keepSearch) {
+    zoneFilterState.search = '';
+    zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+    const searchInput = document.getElementById('zoneFilterSearch');
+    if (searchInput) searchInput.value = '';
+  } else {
+    const normalizedTerm = TextUtils.normalize(zoneFilterState.search);
+    if (!normalizedTerm) {
+      zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+    } else {
+      zoneFilterState.filteredOptions = zoneFilterState.allOptions.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
+    }
+  }
+
+  renderZoneFilterOptions();
+  updateZoneFilterSummary();
+  Filters.selectedZonas = [];
+
+  if (apply) {
+    applyFilters();
+  }
+}
+
+function clearZoneSelection(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  resetZoneFilterState({ apply: true, keepSearch: true });
+}
 
 const UIRenderer = {
   renderStats(data) {
@@ -960,23 +1385,44 @@ const UIRenderer = {
     `;
   },
   
+  normalizeCounts(counts) {
+    if (!Array.isArray(counts)) return [];
+
+    return counts.map(c => {
+      if (c === null || c === undefined) return 0;
+      if (typeof c === 'number') {
+        return Number.isFinite(c) ? c : 0;
+      }
+
+      const parsed = parseFloat(String(c).trim().replace(',', '.'));
+      return Number.isFinite(parsed) ? parsed : 0;
+    });
+  },
+
   renderSparkline(counts, labels) {
-    const max = Math.max(...counts, 1);
+    const safeCounts = this.normalizeCounts(counts);
+
+    if (!safeCounts.length) {
+      return '<div class="sparkline-placeholder">Sin datos</div>';
+    }
+
     const width = 120;
     const height = 30;
-    const barWidth = width / counts.length;
-    
+    const max = Math.max(...safeCounts, 1);
+    const barWidth = width / safeCounts.length;
+
     let svg = `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
-    
-    counts.forEach((count, i) => {
-      const barHeight = (count / max) * height;
+
+    safeCounts.forEach((count, i) => {
+      const normalized = max > 0 ? (count / max) : 0;
+      const barHeight = normalized * height;
       const x = i * barWidth;
       const y = height - barHeight;
       const color = count >= max * 0.7 ? '#D13438' : count >= max * 0.4 ? '#F7630C' : '#0078D4';
-      
-      svg += `<rect x="${x}" y="${y}" width="${barWidth - 2}" height="${barHeight}" fill="${color}" rx="2"/>`;
+
+      svg += `<rect x="${x}" y="${y}" width="${Math.max(barWidth - 2, 1)}" height="${barHeight}" fill="${color}" rx="2"/>`;
     });
-    
+
     svg += '</svg>';
     return svg;
   },
@@ -1367,7 +1813,24 @@ function setupEventListeners() {
   document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
   document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
   
-  document.getElementById('filterCATEC').addEventListener('change', applyFilters);
+  const filterCatec = document.getElementById('filterCATEC');
+  const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
+
+  if (filterCatec && filterExcludeCatec) {
+    filterCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterExcludeCatec.checked = false;
+      }
+      applyFilters();
+    });
+
+    filterExcludeCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterCatec.checked = false;
+      }
+      applyFilters();
+    });
+  }
   document.getElementById('showAllStates').addEventListener('change', applyFilters);
   document.getElementById('filterFTTH').addEventListener('change', e => {
     if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
@@ -1385,6 +1848,18 @@ function setupEventListeners() {
   document.getElementById('filterAlarma').addEventListener('change', applyFilters);
   document.getElementById('quickSearch').addEventListener('input', debounce(applyFilters, 300));
   document.getElementById('ordenarPorIngreso').addEventListener('change', applyFilters);
+
+  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
+  if (zoneFilterSearch) {
+    zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
+  }
+
+  const zoneFilterOptions = document.getElementById('zoneFilterOptions');
+  if (zoneFilterOptions) {
+    zoneFilterOptions.addEventListener('change', onZoneOptionChange);
+  }
+
+  document.addEventListener('click', handleZoneFilterOutsideClick);
 }
 
 async function loadFile(e, tipo) {
@@ -1474,7 +1949,7 @@ function populateFilters() {
   )];
   const terrSelect = document.getElementById('filterTerritorio');
   terrSelect.innerHTML = '<option value="">Todos</option>' + territorios.sort().map(t => `<option value="${t}">${t}</option>`).join('');
-  
+
   const cmtsList = [...new Set(
     allZones
       .map(z => z.cmts)
@@ -1482,12 +1957,23 @@ function populateFilters() {
   )];
   const cmtsSelect = document.getElementById('filterCMTS');
   cmtsSelect.innerHTML = '<option value="">Todos</option>' + cmtsList.sort().map(c => `<option value="${c}">${c}</option>`).join('');
+
+  const zoneNames = [...new Set(
+    (currentData.zonas || [])
+      .map(z => z.zona)
+      .filter(Boolean)
+  )];
+  initializeZoneFilterOptions(zoneNames);
 }
 
 function applyFilters() {
   if (!currentData) return;
   
-  Filters.catec = document.getElementById('filterCATEC').checked;
+  const catecEl = document.getElementById('filterCATEC');
+  const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+
+  Filters.catec = catecEl ? catecEl.checked : false;
+  Filters.excludeCatec = excludeCatecEl ? excludeCatecEl.checked : false;
   Filters.showAllStates = document.getElementById('showAllStates').checked;
   Filters.ftth = document.getElementById('filterFTTH').checked;
   Filters.excludeFTTH = document.getElementById('filterExcludeFTTH').checked;
@@ -1499,7 +1985,8 @@ function applyFilters() {
   Filters.alarma = document.getElementById('filterAlarma').value;
   Filters.quickSearch = document.getElementById('quickSearch').value;
   Filters.ordenarPorIngreso = document.getElementById('ordenarPorIngreso').value;
-  
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+
   const filtered = Filters.apply(currentData.ordenes);
   
   const zones = dataProcessor.processZones(filtered);
@@ -1538,7 +2025,11 @@ function applyFilters() {
 }
 
 function resetFiltersState() {
-  document.getElementById('filterCATEC').checked = false;
+  const catecEl = document.getElementById('filterCATEC');
+  const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+
+  if (catecEl) catecEl.checked = false;
+  if (excludeCatecEl) excludeCatecEl.checked = false;
   document.getElementById('showAllStates').checked = false;
   document.getElementById('filterFTTH').checked = false;
   document.getElementById('filterExcludeFTTH').checked = false;
@@ -1551,6 +2042,8 @@ function resetFiltersState() {
   document.getElementById('quickSearch').value = '';
   document.getElementById('ordenarPorIngreso').value = 'desc';
   Filters.criticidad = '';
+  resetZoneFilterState();
+  closeZoneFilter();
 }
 
 function clearFilters() {
@@ -1934,20 +2427,32 @@ function renderModalContent() {
     });
   }
   
+  const chartCounts = UIRenderer.normalizeCounts(currentZone.last7DaysCounts);
+  const chartLabels = Array.isArray(currentZone.last7Days) ? currentZone.last7Days : [];
+  const maxChartValue = Math.max(...chartCounts, 1);
+
   let html = '<div class="chart-container">';
   html += '<div class="chart-title">📊 Distribución de Ingresos (7 días)</div>';
-  html += '<div style="display: flex; justify-content: space-around; align-items: flex-end; height: 150px; padding: 10px;">';
-  
-  currentZone.last7DaysCounts.forEach((count, i) => {
-    const height = currentZone.last7DaysCounts.length > 0 ? (count / Math.max(...currentZone.last7DaysCounts, 1)) * 120 : 0;
-    html += `<div style="text-align: center;">
-      <div style="width: 60px; height: ${height}px; background: linear-gradient(180deg, #0078D4 0%, #005A9E 100%); border-radius: 4px 4px 0 0; margin: 0 auto;"></div>
-      <div style="font-size: 0.75rem; font-weight: 700; margin-top: 4px;">${count}</div>
-      <div style="font-size: 0.6875rem; color: var(--text-secondary);">${currentZone.last7Days[i]}</div>
-    </div>`;
-  });
-  
-  html += '</div></div>';
+
+  if (!chartCounts.length) {
+    html += '<div class="sparkline-placeholder" style="height: 150px; display: flex; align-items: center; justify-content: center;">Sin datos</div>';
+  } else {
+    html += '<div style="display: flex; justify-content: space-around; align-items: flex-end; height: 150px; padding: 10px;">';
+
+    chartCounts.forEach((count, i) => {
+      const barHeight = maxChartValue > 0 ? (count / maxChartValue) * 120 : 0;
+      const label = chartLabels[i] || '';
+      html += `<div style="text-align: center;">
+        <div style="width: 60px; height: ${barHeight}px; background: linear-gradient(180deg, #0078D4 0%, #005A9E 100%); border-radius: 4px 4px 0 0; margin: 0 auto;"></div>
+        <div style="font-size: 0.75rem; font-weight: 700; margin-top: 4px;">${count}</div>
+        <div style="font-size: 0.6875rem; color: var(--text-secondary);">${label}</div>
+      </div>`;
+    });
+
+    html += '</div>';
+  }
+
+  html += '</div>';
   
   html += `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
     <strong>Total órdenes mostradas:</strong> ${ordenes.length} de ${currentZone.ordenes.length}
