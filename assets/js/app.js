@@ -114,6 +114,8 @@ const TextUtils = {
       .replace(/[\u0300-\u036f]/g,'')
       .trim();
   },
+
+    
   matches(text, query) {
     return this.normalize(text).includes(this.normalize(query));
   },
@@ -143,6 +145,8 @@ const TextUtils = {
         const m = String(jsonStr).match(re);
         return m ? m[1] : '';
       };
+
+        
       if (/macAddress|serialNumber|model|category|description/i.test(jsonStr)){
         return [{
           category: get('category'),
@@ -163,6 +167,11 @@ const TextUtils = {
     return '';
   }
 };
+
+function normalizeEstado(estado) {
+  if (!estado) return '';
+  return TextUtils.normalize(estado).toUpperCase();
+}
 
 function toast(msg) {
   const t = document.createElement('div');
@@ -800,28 +809,24 @@ const Filters = {
       return daysAgo <= this.days;
     });
     
- // Filtrar por estados permitidos (normalizando tildes)
-if (!this.showAllStates) {
-  filtered = filtered.filter(r => {
-    const estRaw = r['Estado.1'] || r['Estado'] || r['Estado.2'] || '';
-    const est = normalizeEstado(estRaw);
-    if (!est) return false;
+   if (!this.showAllStates) {
+      const estadosOcultosNorm = (CONFIG.estadosOcultosPorDefecto || []).map(normalizeEstado);
+      const estadosPermitidosNorm = (CONFIG.estadosPermitidos || []).map(normalizeEstado);
 
-    // ¿Está en la lista de estados ocultos?
-    const estaOculto = CONFIG.estadosOcultosPorDefecto.some(
-      e => normalizeEstado(e) === est
-    );
-    if (estaOculto) return false;
+      filtered = filtered.filter(r => {
+        const estRaw =
+          r['Estado.1'] ||
+          r['Estado']   ||
+          r['Estado.2'] ||
+          '';
 
-    // ¿Está en la lista de estados permitidos?
-    const estaPermitido = CONFIG.estadosPermitidos.some(
-      e => normalizeEstado(e) === est
-    );
+        const est = normalizeEstado(estRaw);
+        if (!est) return false;
 
-    return estaPermitido;
-  });
-}
-
+        if (estadosOcultosNorm.includes(est)) return false;
+        return estadosPermitidosNorm.includes(est);
+      });
+    }
     
     if (this.catec) {
       filtered = filtered.filter(r => {
