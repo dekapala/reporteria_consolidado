@@ -526,6 +526,11 @@ td.center { text-align: center; }
 }
 
 .sparkline { display: inline-block; vertical-align: middle; }
+.sparkline-placeholder {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-align: center;
+}
 
 .modal-backdrop {
   display: none;

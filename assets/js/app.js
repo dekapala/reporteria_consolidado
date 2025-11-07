@@ -956,23 +956,44 @@ const UIRenderer = {
     `;
   },
   
+  normalizeCounts(counts) {
+    if (!Array.isArray(counts)) return [];
+
+    return counts.map(c => {
+      if (c === null || c === undefined) return 0;
+      if (typeof c === 'number') {
+        return Number.isFinite(c) ? c : 0;
+      }
+
+      const parsed = parseFloat(String(c).trim().replace(',', '.'));
+      return Number.isFinite(parsed) ? parsed : 0;
+    });
+  },
+
   renderSparkline(counts, labels) {
-    const max = Math.max(...counts, 1);
+    const safeCounts = this.normalizeCounts(counts);
+
+    if (!safeCounts.length) {
+      return '<div class="sparkline-placeholder">Sin datos</div>';
+    }
+
     const width = 120;
     const height = 30;
-    const barWidth = width / counts.length;
-    
+    const max = Math.max(...safeCounts, 1);
+    const barWidth = width / safeCounts.length;
+
     let svg = `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
-    
-    counts.forEach((count, i) => {
-      const barHeight = (count / max) * height;
+
+    safeCounts.forEach((count, i) => {
+      const normalized = max > 0 ? (count / max) : 0;
+      const barHeight = normalized * height;
       const x = i * barWidth;
       const y = height - barHeight;
       const color = count >= max * 0.7 ? '#D13438' : count >= max * 0.4 ? '#F7630C' : '#0078D4';
-      
-      svg += `<rect x="${x}" y="${y}" width="${barWidth - 2}" height="${barHeight}" fill="${color}" rx="2"/>`;
+
+      svg += `<rect x="${x}" y="${y}" width="${Math.max(barWidth - 2, 1)}" height="${barHeight}" fill="${color}" rx="2"/>`;
     });
-    
+
     svg += '</svg>';
     return svg;
   },
@@ -1930,20 +1951,32 @@ function renderModalContent() {
     });
   }
   
+  const chartCounts = UIRenderer.normalizeCounts(currentZone.last7DaysCounts);
+  const chartLabels = Array.isArray(currentZone.last7Days) ? currentZone.last7Days : [];
+  const maxChartValue = Math.max(...chartCounts, 1);
+
   let html = '<div class="chart-container">';
   html += '<div class="chart-title">📊 Distribución de Ingresos (7 días)</div>';
-  html += '<div style="display: flex; justify-content: space-around; align-items: flex-end; height: 150px; padding: 10px;">';
-  
-  currentZone.last7DaysCounts.forEach((count, i) => {
-    const height = currentZone.last7DaysCounts.length > 0 ? (count / Math.max(...currentZone.last7DaysCounts, 1)) * 120 : 0;
-    html += `<div style="text-align: center;">
-      <div style="width: 60px; height: ${height}px; background: linear-gradient(180deg, #0078D4 0%, #005A9E 100%); border-radius: 4px 4px 0 0; margin: 0 auto;"></div>
-      <div style="font-size: 0.75rem; font-weight: 700; margin-top: 4px;">${count}</div>
-      <div style="font-size: 0.6875rem; color: var(--text-secondary);">${currentZone.last7Days[i]}</div>
-    </div>`;
-  });
-  
-  html += '</div></div>';
+
+  if (!chartCounts.length) {
+    html += '<div class="sparkline-placeholder" style="height: 150px; display: flex; align-items: center; justify-content: center;">Sin datos</div>';
+  } else {
+    html += '<div style="display: flex; justify-content: space-around; align-items: flex-end; height: 150px; padding: 10px;">';
+
+    chartCounts.forEach((count, i) => {
+      const barHeight = maxChartValue > 0 ? (count / maxChartValue) * 120 : 0;
+      const label = chartLabels[i] || '';
+      html += `<div style="text-align: center;">
+        <div style="width: 60px; height: ${barHeight}px; background: linear-gradient(180deg, #0078D4 0%, #005A9E 100%); border-radius: 4px 4px 0 0; margin: 0 auto;"></div>
+        <div style="font-size: 0.75rem; font-weight: 700; margin-top: 4px;">${count}</div>
+        <div style="font-size: 0.6875rem; color: var(--text-secondary);">${label}</div>
+      </div>`;
+    });
+
+    html += '</div>';
+  }
+
+  html += '</div>';
   
   html += `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
     <strong>Total órdenes mostradas:</strong> ${ordenes.length} de ${currentZone.ordenes.length}
