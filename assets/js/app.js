@@ -1744,6 +1744,286 @@ function toggleEquiposGrupo(zona){
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
 }
 
+const ZONE_EXPORT_HEADERS = [
+  'Fecha',
+  'ZonaHFC',
+  'ZonaFTTH',
+  'Territorio',
+  'Ubicacion',
+  'Caso',
+  'NumeroOrden',
+  'NumeroOTuca',
+  'Diagnostico',
+  'Tipo',
+  'TipoTrabajo',
+  'Estado1',
+  'Estado2',
+  'Estado3',
+  'MAC'
+];
+
+const ORDER_FIELD_KEYS = {
+  fecha: [
+    'Fecha de creación',
+    'Fecha/Hora de apertura',
+    'Fecha de inicio',
+    'Fecha'
+  ],
+  zonaHFC: [
+    'Zona Tecnica HFC',
+    'Zona Tecnica',
+    'Zona HFC',
+    'Zona'
+  ],
+  zonaFTTH: [
+    'Zona Tecnica FTTH',
+    'Zona FTTH'
+  ],
+  territorio: [
+    'Territorio de servicio: Nombre',
+    'Territorio',
+    'Territorio servicio'
+  ],
+  ubicacionCalle: [
+    'Calle',
+    'Dirección',
+    'Direccion',
+    'Domicilio',
+    'Dirección del servicio',
+    'Direccion del servicio',
+    'Dirección Servicio'
+  ],
+  ubicacionAltura: [
+    'Altura',
+    'Altura (N°)',
+    'Altura domicilio',
+    'Número',
+    'Numero',
+    'Nro',
+    'Altura Domicilio'
+  ],
+  ubicacionLocalidad: [
+    'Localidad',
+    'Localidad Instalación',
+    'Localidad Instalacion',
+    'Ciudad',
+    'Partido',
+    'Distrito',
+    'Provincia'
+  ],
+  caso: [
+    'Número del caso',
+    'Numero del caso',
+    'Caso Externo',
+    'Caso externo',
+    'External Case Id',
+    'Nro Caso',
+    'Número de Caso',
+    'Numero Caso'
+  ],
+  numeroOrden: [
+    'Número de cita',
+    'Numero de cita',
+    'Número de Orden',
+    'Numero de Orden',
+    'Número Orden',
+    'Numero Orden',
+    'Orden',
+    'Orden de trabajo',
+    'N° Orden',
+    'Nro Orden',
+    'Número de orden de trabajo',
+    'Numero de orden de trabajo',
+    'N° OT'
+  ],
+  numeroOTuca: [
+    'Número OT UCA',
+    'Numero OT UCA',
+    'Número de OT UCA',
+    'Numero de OT UCA',
+    'NumeroOTUca',
+    'OT UCA',
+    'OT_UCA',
+    'Nro OT UCA'
+  ],
+  diagnostico: [
+    'Diagnostico Tecnico',
+    'Diagnóstico Técnico',
+    'Diagnostico',
+    'Diagnóstico',
+    'Diagnostico Cliente',
+    'Diagnostico tecnico'
+  ],
+  tipo: [
+    'Tipo',
+    'Tipo de caso',
+    'Tipo caso',
+    'Tipo OPEN',
+    'Tipo FAN',
+    'Tipo de OT',
+    'Tipo Servicio'
+  ],
+  tipoTrabajo: [
+    'Tipo de trabajo: Nombre de tipo de trabajo',
+    'Tipo de trabajo',
+    'Tipo Trabajo',
+    'TipoTrabajo'
+  ],
+  estado1: [
+    'Estado.1',
+    'Estado',
+    'Estado inicial'
+  ],
+  estado2: [
+    'Estado.2',
+    'Estado final',
+    'Estado actual'
+  ],
+  estado3: [
+    'Estado.3',
+    'Estado final',
+    'Estado detalle',
+    'Estado gestion',
+    'Estado gestión',
+    'Estado Gestión'
+  ],
+  mac: [
+    'MAC',
+    'Mac',
+    'Mac Address',
+    'Dirección MAC',
+    'Direccion MAC',
+    'MAC Address'
+  ]
+};
+
+function pickFirstValue(obj, keys){
+  if (!obj || !keys) return '';
+  for (const key of keys){
+    if (!key) continue;
+    const value = obj[key];
+    if (value !== null && value !== undefined){
+      const str = String(value).trim();
+      if (str) return str;
+    }
+  }
+  return '';
+}
+
+function buildUbicacion(order){
+  const calle = pickFirstValue(order, ORDER_FIELD_KEYS.ubicacionCalle);
+  const altura = pickFirstValue(order, ORDER_FIELD_KEYS.ubicacionAltura);
+  const localidad = pickFirstValue(order, ORDER_FIELD_KEYS.ubicacionLocalidad);
+
+  const parts = [];
+  if (calle && altura){
+    parts.push(`${calle} ${altura}`.trim());
+  } else if (calle){
+    parts.push(calle);
+  } else if (altura){
+    parts.push(altura);
+  }
+
+  if (localidad){
+    parts.push(localidad);
+  }
+
+  return parts.join(', ');
+}
+
+function buildOrderExportRow(order, zoneInfo){
+  if (!order) return null;
+  const meta = order.__meta || {};
+
+  let fecha = pickFirstValue(order, ORDER_FIELD_KEYS.fecha);
+  if (!fecha && meta.fecha){
+    fecha = DateUtils.format(meta.fecha);
+  }
+
+  const zonaHFC = meta.zonaHFC || zoneInfo?.zonaHFC || pickFirstValue(order, ORDER_FIELD_KEYS.zonaHFC) || zoneInfo?.zona || '';
+  const zonaFTTH = meta.zonaFTTH || zoneInfo?.zonaFTTH || pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH);
+  const territorio = meta.territorio || pickFirstValue(order, ORDER_FIELD_KEYS.territorio);
+  const ubicacion = buildUbicacion(order);
+  const caso = meta.numeroCaso || pickFirstValue(order, ORDER_FIELD_KEYS.caso);
+  const numeroOrden = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOrden);
+  const numeroOTuca = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOTuca);
+  const diagnostico = pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
+  const tipo = pickFirstValue(order, ORDER_FIELD_KEYS.tipo) || zoneInfo?.tipo || '';
+  const tipoTrabajo = pickFirstValue(order, ORDER_FIELD_KEYS.tipoTrabajo);
+  const estado1 = pickFirstValue(order, ORDER_FIELD_KEYS.estado1);
+  let estado2 = pickFirstValue(order, ORDER_FIELD_KEYS.estado2);
+  let estado3 = pickFirstValue(order, ORDER_FIELD_KEYS.estado3);
+  if (estado3 && estado2 && estado3 === estado2){
+    const alternativas = ['Estado final', 'Estado gestión', 'Estado Gestion', 'Estado detalle'];
+    const altern = pickFirstValue(order, alternativas);
+    if (altern && altern !== estado2){
+      estado3 = altern;
+    }
+  }
+
+  let mac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
+  if (!mac && Array.isArray(meta.dispositivos) && meta.dispositivos.length){
+    mac = String(meta.dispositivos[0].macAddress || meta.dispositivos[0].mac || '').trim();
+  }
+
+  return {
+    Fecha: fecha || '',
+    ZonaHFC: zonaHFC || '',
+    ZonaFTTH: zonaFTTH || '',
+    Territorio: territorio || '',
+    Ubicacion: ubicacion || '',
+    Caso: caso || '',
+    NumeroOrden: numeroOrden || '',
+    NumeroOTuca: numeroOTuca || '',
+    Diagnostico: diagnostico || '',
+    Tipo: tipo || '',
+    TipoTrabajo: tipoTrabajo || '',
+    Estado1: estado1 || '',
+    Estado2: estado2 || '',
+    Estado3: estado3 || '',
+    MAC: mac || ''
+  };
+}
+
+function buildZoneExportRows(zoneData){
+  if (!zoneData) return [];
+  const source = zoneData.ordenesOriginales || zoneData.ordenes || [];
+  return source
+    .map(order => buildOrderExportRow(order, zoneData))
+    .filter(row => row && ZONE_EXPORT_HEADERS.some(header => (row[header] || '').toString().trim().length));
+}
+
+function createWorksheetFromRows(rows, headers){
+  if (!rows || !rows.length) return null;
+  const data = rows.map(row => headers.map(header => row[header] || ''));
+  return XLSX.utils.aoa_to_sheet([headers, ...data]);
+}
+
+function sanitizeSheetName(name){
+  const fallback = 'Hoja';
+  if (!name) return fallback;
+  const invalidChars = /[\/?*:[\]]/g;
+  const cleaned = name.toString().replace(invalidChars, ' ').replace(/[\u0000-\u001f]/g, ' ').trim();
+  const truncated = cleaned.substring(0, 31);
+  return truncated || fallback;
+}
+
+function appendSheet(workbook, worksheet, desiredName, usedNames){
+  if (!worksheet) return false;
+  const base = sanitizeSheetName(desiredName);
+  let name = base;
+  let counter = 1;
+  while (usedNames.has(name)){
+    counter += 1;
+    const suffix = `_${counter}`;
+    const baseTrim = base.substring(0, Math.max(31 - suffix.length, 1));
+    name = `${baseTrim}${suffix}`;
+  }
+  usedNames.add(name);
+  XLSX.utils.book_append_sheet(workbook, worksheet, name);
+  return true;
+}
+
 function exportEquiposGrupoExcel(zona, useFiltered = false){
   const source = useFiltered && window.equiposPorZona ? window.equiposPorZona : window.equiposPorZonaCompleto;
   
@@ -1765,15 +2045,23 @@ function exportEquiposGrupoExcel(zona, useFiltered = false){
 }
 
 function exportZonaExcel(zoneIdx) {
-  const zonaData = window.currentAnalyzedZones[zoneIdx];
+  const zonaData = window.currentAnalyzedZones?.[zoneIdx];
   if (!zonaData) return toast('No hay datos de la zona');
-  
+
+  const rows = buildZoneExportRows(zonaData);
+  if (!rows.length) {
+    toast('No hay órdenes para exportar en esta zona');
+    return;
+  }
+
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(zonaData.ordenesOriginales || zonaData.ordenes || []);
-  XLSX.utils.book_append_sheet(wb, ws, `Zona_${zonaData.zona}`);
-  
-  XLSX.writeFile(wb, `Zona_${zonaData.zona}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  toast(`✅ Exportada zona ${zonaData.zona}`);
+  const usedNames = new Set();
+  const sheet = createWorksheetFromRows(rows, ZONE_EXPORT_HEADERS);
+  appendSheet(wb, sheet, `Zona_${zonaData.zona}`, usedNames);
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `Zona_${zonaData.zona}_${fecha}.xlsx`);
+  toast(`✅ Exportada zona ${zonaData.zona} (${rows.length} órdenes)`);
 }
 
 function exportCMTSExcel(cmts) {
@@ -2597,9 +2885,18 @@ function exportBEFAN() {
 }
 
 function exportExcelVista(){
-  const wb = XLSX.utils.book_new();
+  const hasZones = Array.isArray(window.currentAnalyzedZones) && window.currentAnalyzedZones.length;
+  const hasOrders = Array.isArray(window.lastFilteredOrders) && window.lastFilteredOrders.length;
 
-  if (Array.isArray(window.currentAnalyzedZones) && window.currentAnalyzedZones.length){
+  if (!hasZones && !hasOrders) {
+    toast('No hay datos para exportar');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set();
+
+  if (hasZones){
     const zonasData = window.currentAnalyzedZones.map(z => ({
       Zona: z.zona,
       Tipo: z.tipo,
@@ -2612,7 +2909,8 @@ function exportExcelVista(){
       Ingreso_N1: z.ingresoN1,
       Max_Dia: z.maxDia
     }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zonasData), 'Zonas');
+    const zonasSheet = XLSX.utils.json_to_sheet(zonasData);
+    appendSheet(wb, zonasSheet, 'Zonas', usedNames);
   }
 
   if (Array.isArray(window.currentCMTSData) && window.currentCMTSData.length){
@@ -2624,7 +2922,8 @@ function exportExcelVista(){
       Zonas_DOWN: c.zonasDown,
       Zonas_Criticas: c.zonasCriticas
     }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cmtsData), 'CMTS');
+    const cmtsSheet = XLSX.utils.json_to_sheet(cmtsData);
+    appendSheet(wb, cmtsSheet, 'CMTS', usedNames);
   }
 
   if (window.edificiosData && window.edificiosData.length){
@@ -2634,7 +2933,8 @@ function exportExcelVista(){
       Territorio: e.territorio,
       Total_OTs: e.casos.length
     }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(edi), 'Edificios');
+    const ediSheet = XLSX.utils.json_to_sheet(edi);
+    appendSheet(wb, ediSheet, 'Edificios', usedNames);
   }
 
   if (window.equiposPorZona && window.equiposPorZona.size){
@@ -2642,12 +2942,30 @@ function exportExcelVista(){
     window.equiposPorZona.forEach((arr, zona) => {
       arr.forEach(it => todos.push({ ...it, zona }));
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(todos), 'Equipos');
+    const equiposSheet = XLSX.utils.json_to_sheet(todos);
+    appendSheet(wb, equiposSheet, 'Equipos', usedNames);
+  }
+
+  if (hasZones){
+    const detalleRows = [];
+    window.currentAnalyzedZones.forEach(z => {
+      const rows = buildZoneExportRows(z);
+      if (rows && rows.length) {
+        detalleRows.push(...rows);
+      }
+    });
+    const detalleSheet = createWorksheetFromRows(detalleRows, ZONE_EXPORT_HEADERS);
+    appendSheet(wb, detalleSheet, 'Detalle_Zonas', usedNames);
+  }
+
+  if (!wb.SheetNames || wb.SheetNames.length === 0){
+    toast('No hay datos para exportar');
+    return;
   }
 
   const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `Vista_Filtrada_${fecha}.xlsx`);
-  toast('✓ Vista filtrada exportada');
+  toast('✓ Vista detallada exportada');
 }
 
 function exportExcelZonasCrudo(){
