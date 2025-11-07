@@ -1,6 +1,6 @@
 console.log('🚀 Panel v5.0 COMPLETO - Territorios Críticos + Filtros Equipos + Stats Clickeables');
 
-const CONFIG = { 
+const CONFIG = {
   codigo_befan: 'FR461',
   defaultDays: 3,
   estadosPermitidos: [
@@ -13,6 +13,50 @@ const CONFIG = {
   ],
   estadosOcultosPorDefecto: ['CANCELADA', 'CERRADA']
 };
+
+const CM_PASS_STORAGE_KEY = 'cmPassData';
+
+const cmPassStore = {
+  load() {
+    try {
+      const raw = localStorage.getItem(CM_PASS_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || !parsed.kind) return null;
+      return parsed;
+    } catch (err) {
+      console.error('No se pudo leer CM PASS almacenado', err);
+      return null;
+    }
+  },
+  save(entry) {
+    const record = {
+      version: 1,
+      updatedAt: Date.now(),
+      ...entry
+    };
+    try {
+      localStorage.setItem(CM_PASS_STORAGE_KEY, JSON.stringify(record));
+    } catch (err) {
+      console.error('No se pudo guardar CM PASS en localStorage', err);
+    }
+    return record;
+  },
+  clear() {
+    try {
+      localStorage.removeItem(CM_PASS_STORAGE_KEY);
+    } catch (err) {
+      console.error('No se pudo limpiar CM PASS almacenado', err);
+    }
+  },
+  toDataUrl(entry) {
+    if (!entry || entry.kind !== 'image' || !entry.data) return null;
+    const mime = entry.mime && typeof entry.mime === 'string' ? entry.mime : 'image/png';
+    return `data:${mime};base64,${entry.data}`;
+  }
+};
+
+window.cmPassStore = cmPassStore;
 
 const FMS_TIPOS = {
   'ED': 'Edificio',
@@ -196,7 +240,7 @@ document.addEventListener('click', (e) => {
 
 function openPlanillasNewTab() {
   document.getElementById('utilitiesMenu').classList.remove('show');
-  
+
   const newWindow = window.open('', '_blank', 'width=1000,height=800');
   
   const planillasHTML = `<!DOCTYPE html>
@@ -314,6 +358,653 @@ Generado desde Panel Fulfillment v5.0\`;
 
   newWindow.document.write(planillasHTML);
   newWindow.document.close();
+}
+
+function openUsefulLinks() {
+  document.getElementById('utilitiesMenu').classList.remove('show');
+
+  const win = window.open('', '_blank', 'width=1200,height=860,scrollbars=yes');
+  if (!win) {
+    toast('🔒 Habilitá las ventanas emergentes para ver los links útiles.');
+    return;
+  }
+
+  const baseHref = new URL('.', window.location.href).href;
+  const sections = [
+    {
+      title: 'Panel Fulfillment',
+      description: 'Accesos clave al entorno de análisis y soporte del equipo.',
+      links: [
+        { label: 'Analisis', url: 'http://10.120.52.24/analisis/', note: 'Panel principal de gestión' },
+        { label: 'planillas', url: 'http://10.120.52.24/pagmdr/', note: 'Plantillas de carga diaria' },
+        { label: 'Herramientas', url: 'http://10.120.52.24/analisis/herramientas_internas/', note: 'Utilidades internas' }
+      ]
+    },
+    {
+      title: 'Gestión & Monitoreo',
+      description: 'Aplicaciones operativas para seguimiento y control.',
+      links: [
+        { label: 'ICD', url: 'https://teco.sccd.ibmserviceengage.com/maximo_ICD/ui/login', note: 'Incidentes y órdenes' },
+        { label: 'ftth 1', url: 'http://10.9.44.132/symphonica/v2_10/#/', note: 'Symphonica FTTH' },
+        { label: 'CCIP', url: 'https://ccip/index.php/login', note: 'Capa de Control IP' },
+        { label: 'iTracker', url: 'https://itracker.telecom.com.ar/?L=index&m=menu', note: 'Seguimiento tickets' },
+        { label: 'PortalNOC', url: 'https://supervision/portalNOC/login.asp', note: 'Monitoreo NOC' },
+        { label: 'UnMacMe', url: 'https://unmacme.telecom.com.ar/', note: 'Gestión MACs cablemodem' },
+        { label: 'TAU', url: 'https://tau.telecom.com.ar/#/ppf/home', note: 'Portal TAU' },
+        { label: 'ServAssure NXT', url: 'https://nxt.telecom.arg.telecom.com.ar:8443/nxt-ui/#/search', note: 'Monitoreo HFC' },
+        { label: 'FMS', url: 'http://fmbrms-prod.corp.cablevision.com.ar:8180/fms/web/#/login', note: 'Alarmas FMS' },
+        { label: 'BeFan', url: 'https://snap.telecom.com.ar/befan/index.html#/signin', note: 'Gestión BeFan' }
+      ]
+    },
+    {
+      title: 'Recursos técnicos',
+      description: 'Accesos de referencia para FTTH y bases de consulta.',
+      links: [
+        { label: 'cei ftth', url: 'http://pwxdatadb3/welcome/', note: 'Portal PWX CEI' },
+        { label: 'Gpon Status', url: 'http://10.9.44.132/gpon_status/v1_0/inventario/#', note: 'Inventario GPON' },
+        { label: 'Buscador Sector Operativo/Central', url: 'https://cablevisionfibertel.sharepoint.com/sites/FIELDSERVICE/formdec/SitePages/Buscador-por-Sector-Operativo.aspx', note: 'SharePoint Field Service' }
+      ]
+    }
+  ];
+
+  const sectionsHtml = sections.map(section => `
+    <section class="links-section">
+      <div class="links-section-header">
+        <h2>${section.title}</h2>
+        ${section.description ? `<p>${section.description}</p>` : ''}
+      </div>
+      <div class="links-grid">
+        ${section.links.map(link => `
+          <a class="link-card" href="${link.url}" target="_blank" rel="noopener">
+            <span class="link-title">${link.label}</span>
+            ${link.note ? `<span class="link-note">${link.note}</span>` : ''}
+          </a>
+        `).join('')}
+      </div>
+    </section>
+  `).join('');
+
+  win.document.write(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="${baseHref}">
+  <title>🔗 Links útiles - Panel Fulfillment</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    .links-wrapper {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 32px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 2.25rem;
+      color: #38bdf8;
+    }
+    header p {
+      margin: 0;
+      color: #cbd5f5;
+      font-size: 0.95rem;
+      max-width: 560px;
+    }
+    .links-section {
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 18px;
+      padding: 24px 24px 28px;
+      margin-bottom: 24px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.55);
+    }
+    .links-section-header h2 {
+      margin: 0;
+      font-size: 1.4rem;
+      color: #f8fafc;
+    }
+    .links-section-header p {
+      margin: 6px 0 0 0;
+      color: #cbd5f5;
+      font-size: 0.95rem;
+    }
+    .links-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .link-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 14px;
+      padding: 16px;
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.18s ease, border-color 0.18s ease;
+    }
+    .link-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(56, 189, 248, 0.6);
+      box-shadow: 0 12px 25px rgba(56, 189, 248, 0.25);
+    }
+    .link-title {
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: #f8fafc;
+    }
+    .link-note {
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    footer {
+      margin-top: 32px;
+      font-size: 0.8rem;
+      color: rgba(148, 163, 184, 0.7);
+      text-align: center;
+    }
+    @media (max-width: 640px) {
+      header h1 { font-size: 1.8rem; }
+      .links-section { padding: 20px 18px 24px; }
+      .links-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="links-wrapper">
+    <header>
+      <h1>🔗 Links útiles</h1>
+      <p>Accesos verificados en las últimas 24 horas para acelerar el soporte operativo y técnico del equipo.</p>
+    </header>
+    ${sectionsHtml}
+    <footer>Actualizado ${new Date().toLocaleDateString('es-AR')} • Panel Fulfillment v5.0</footer>
+  </div>
+</body>
+</html>`);
+  win.document.close();
+}
+
+function openCmPass() {
+  document.getElementById('utilitiesMenu').classList.remove('show');
+
+  const win = window.open('', '_blank', 'width=1100,height=840,scrollbars=yes');
+  if (!win) {
+    toast('🔒 Habilitá las ventanas emergentes para ver CM PASS.');
+    return;
+  }
+
+  const baseHref = new URL('.', window.location.href).href;
+  const savedEntry = cmPassStore.load();
+  win.document.write(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="${baseHref}">
+  <title>🔐 CM PASS - Panel Fulfillment</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    .cmpass-wrapper {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 40px 24px 64px;
+    }
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 32px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 2.3rem;
+      color: #38bdf8;
+      letter-spacing: 0.02em;
+    }
+    header p {
+      margin: 0;
+      color: #cbd5f5;
+      max-width: 680px;
+      font-size: 0.98rem;
+    }
+    .cmpass-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 6fr) minmax(0, 4fr);
+      gap: 24px;
+      align-items: start;
+    }
+    .cmpass-preview,
+    .cmpass-manage {
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 22px;
+      padding: 24px;
+      box-shadow: 0 22px 48px rgba(15, 23, 42, 0.45);
+    }
+    .cmpass-preview img {
+      width: 100%;
+      max-width: 100%;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      box-shadow: 0 18px 36px rgba(8, 145, 178, 0.25);
+    }
+    .cmpass-preview table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      margin-top: 12px;
+    }
+    .cmpass-preview th,
+    .cmpass-preview td {
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      padding: 10px 12px;
+      text-align: left;
+    }
+    .cmpass-preview th {
+      background: rgba(51, 65, 85, 0.6);
+      font-weight: 600;
+    }
+    .cmpass-preview .meta {
+      margin-top: 18px;
+      font-size: 0.82rem;
+      color: rgba(148, 163, 184, 0.75);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .cmpass-empty {
+      display: grid;
+      place-items: center;
+      text-align: center;
+      min-height: 360px;
+      padding: 12px;
+      color: #94a3b8;
+      gap: 10px;
+    }
+    .cmpass-empty strong {
+      color: #38bdf8;
+      font-size: 1rem;
+    }
+    .cmpass-manage h2 {
+      margin: 0 0 12px 0;
+      font-size: 1.3rem;
+      color: #f8fafc;
+    }
+    .cmpass-manage p {
+      margin: 0 0 18px 0;
+      color: #94a3b8;
+      font-size: 0.95rem;
+    }
+    .input-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #cbd5f5;
+      margin-bottom: 6px;
+      margin-top: 18px;
+    }
+    input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px dashed rgba(56, 189, 248, 0.45);
+      background: rgba(15, 23, 42, 0.55);
+      color: #e2e8f0;
+    }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(15, 23, 42, 0.55);
+      color: #e2e8f0;
+      padding: 12px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      resize: vertical;
+    }
+    .form-actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    button {
+      cursor: pointer;
+      border-radius: 12px;
+      border: none;
+      padding: 10px 18px;
+      font-weight: 600;
+      font-size: 0.92rem;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    button.primary {
+      background: rgba(56, 189, 248, 0.18);
+      border: 1px solid rgba(56, 189, 248, 0.6);
+      color: #38bdf8;
+    }
+    button.secondary {
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      color: #cbd5f5;
+    }
+    button.danger {
+      background: rgba(248, 113, 113, 0.18);
+      border: 1px solid rgba(248, 113, 113, 0.45);
+      color: #fca5a5;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 24px rgba(15, 23, 42, 0.35);
+    }
+    .hint {
+      margin-top: 16px;
+      font-size: 0.85rem;
+      color: rgba(148, 163, 184, 0.75);
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+    .status {
+      margin-top: 16px;
+      font-size: 0.88rem;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      display: none;
+    }
+    .status.show { display: block; }
+    .status.ok { border-color: rgba(56, 189, 248, 0.5); color: #67e8f9; }
+    .status.warn { border-color: rgba(250, 204, 21, 0.45); color: #facc15; }
+    .status.error { border-color: rgba(248, 113, 113, 0.6); color: #fca5a5; }
+    footer {
+      margin-top: 40px;
+      font-size: 0.78rem;
+      color: rgba(148, 163, 184, 0.7);
+      text-align: center;
+    }
+    @media (max-width: 960px) {
+      .cmpass-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="cmpass-wrapper">
+    <header>
+      <h1>🔐 CM PASS</h1>
+      <p>Mantené la tabla de credenciales sin subir archivos binarios. Podés cargar una imagen PNG/JPG o pegar el JSON exportado para compartirlo con el equipo.</p>
+    </header>
+    <section class="cmpass-layout">
+      <article class="cmpass-preview" id="cmPassPreview"></article>
+      <aside class="cmpass-manage">
+        <h2>Actualizar referencia</h2>
+        <p>Subí la exportación más reciente o pegá la cadena base64 / JSON que te compartieron. Se guardará de forma local en el navegador.</p>
+        <form id="cmPassForm">
+          <label class="input-label" for="cmPassImageInput">Cargar imagen (PNG / JPG)</label>
+          <input type="file" id="cmPassImageInput" accept="image/png,image/jpeg">
+          <label class="input-label" for="cmPassPaste">Pegá base64 o JSON exportado</label>
+          <textarea id="cmPassPaste" placeholder="Pegá aquí la cadena base64 (con o sin data URL) o el JSON generado desde este mismo panel"></textarea>
+          <div class="form-actions">
+            <button type="submit" class="primary" id="cmPassSaveBtn">💾 Guardar referencia</button>
+            <button type="button" class="danger" id="cmPassClearBtn">🧹 Quitar dato</button>
+          </div>
+        </form>
+        <div class="hint">🔁 <span>Los datos se conservan en este navegador. Exportalos para compartirlos sin adjuntar archivos.</span></div>
+        <button type="button" class="secondary" id="cmPassExportBtn">📤 Exportar dato actual</button>
+        <div id="cmPassStatus" class="status"></div>
+      </aside>
+    </section>
+    <footer>Actualizado ${new Date().toLocaleDateString('es-AR')} • Panel Fulfillment v5.0</footer>
+  </div>
+  <script>
+    (() => {
+      const openerStore = window.opener && window.opener.cmPassStore ? window.opener.cmPassStore : null;
+      const localStore = openerStore || window.cmPassStore;
+      const previewEl = document.getElementById('cmPassPreview');
+      const formEl = document.getElementById('cmPassForm');
+      const imageInput = document.getElementById('cmPassImageInput');
+      const pasteInput = document.getElementById('cmPassPaste');
+      const statusEl = document.getElementById('cmPassStatus');
+      const clearBtn = document.getElementById('cmPassClearBtn');
+      const exportBtn = document.getElementById('cmPassExportBtn');
+      const initialEntry = ${JSON.stringify(savedEntry ?? null)};
+
+      const formatDate = (entry) => {
+        if (!entry || !entry.updatedAt) return 'Sin registro de actualización.';
+        try {
+          return new Date(entry.updatedAt).toLocaleString('es-AR');
+        } catch (_) {
+          return 'Sin registro de actualización.';
+        }
+      };
+
+      const toDataUrl = (entry) => {
+        if (!entry || entry.kind !== 'image' || !entry.data) return null;
+        const mime = entry.mime && typeof entry.mime === 'string' ? entry.mime : 'image/png';
+        return 'data:' + mime + ';base64,' + entry.data;
+      };
+
+      const renderPreview = (entry) => {
+        if (!entry) {
+          previewEl.innerHTML = [
+            '<div class="cmpass-empty">',
+            '  <strong>No hay referencia cargada</strong>',
+            '  <p>Guardá una imagen o JSON para que el equipo acceda a CM PASS sin archivos binarios.</p>',
+            '</div>'
+          ].join('');
+          return;
+        }
+
+        if (entry.kind === 'table' && entry.table && Array.isArray(entry.table.rows)) {
+          const headers = Array.isArray(entry.table.headers) && entry.table.headers.length
+            ? entry.table.headers
+            : Object.keys(entry.table.rows[0] || {});
+          const headerHtml = headers.map((h) => '<th>' + h + '</th>').join('');
+          const rowsHtml = entry.table.rows.map((row) => {
+            if (Array.isArray(row)) {
+              return '<tr>' + row.map((cell) => '<td>' + (cell ?? '') + '</td>').join('') + '</tr>';
+            }
+            if (row && typeof row === 'object') {
+              return '<tr>' + headers.map((h) => '<td>' + (row[h] ?? '') + '</td>').join('') + '</tr>';
+            }
+            return '<tr><td colspan="' + headers.length + '">Fila inválida</td></tr>';
+          }).join('');
+
+          previewEl.innerHTML = [
+            '<div>',
+            '  <h3 style="margin-top:0;margin-bottom:12px;font-size:1.1rem;color:#f8fafc;">Tabla CM PASS</h3>',
+            '  <p style="margin:0 0 16px 0;color:#94a3b8;font-size:0.9rem;">Referencia convertida a tabla para consulta rápida.</p>',
+            '  <table>',
+            '    <thead><tr>' + headerHtml + '</tr></thead>',
+            '    <tbody>' + rowsHtml + '</tbody>',
+            '  </table>',
+            '  <div class="meta">',
+            '    <span>Última actualización: ' + formatDate(entry) + '</span>',
+            entry.source ? '    <span>Fuente: ' + entry.source + '</span>' : '',
+            '  </div>',
+            '</div>'
+          ].join('');
+          return;
+        }
+
+        const dataUrl = toDataUrl(entry);
+        if (dataUrl) {
+          previewEl.innerHTML = [
+            '<div>',
+            '  <h3 style="margin-top:0;margin-bottom:12px;font-size:1.1rem;color:#f8fafc;">Imagen CM PASS</h3>',
+            '  <p style="margin:0 0 16px 0;color:#94a3b8;font-size:0.9rem;">La imagen se almacena de forma local y puede descargarse cuando la necesites.</p>',
+            '  <img src="' + dataUrl + '" alt="Tabla CM PASS">',
+            '  <div class="cmpass-actions" style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;">',
+            '    <a href="' + dataUrl + '" download="' + (entry.name || 'cm-pass.png') + '" style="text-decoration:none;padding:10px 16px;border-radius:12px;border:1px solid rgba(56, 189, 248, 0.6);color:#38bdf8;">⬇️ Descargar imagen</a>',
+            '  </div>',
+            '  <div class="meta">',
+            '    <span>Última actualización: ' + formatDate(entry) + '</span>',
+            entry.name ? '    <span>Archivo original: ' + entry.name + '</span>' : '',
+            '  </div>',
+            '</div>'
+          ].join('');
+          return;
+        }
+
+        previewEl.innerHTML = [
+          '<div class="cmpass-empty">',
+          '  <strong>Dato desconocido</strong>',
+          '  <p>No se pudo interpretar el contenido guardado. Probá volver a cargarlo.</p>',
+          '</div>'
+        ].join('');
+      };
+
+      const setStatus = (message, variant = 'info') => {
+        statusEl.textContent = message;
+        statusEl.className = 'status show ' + variant;
+      };
+
+      renderPreview(initialEntry);
+
+      const readFileEntry = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          if (typeof result !== 'string') {
+            reject(new Error('No se pudo leer el archivo.'));
+            return;
+          }
+          const [meta, data] = result.split(',', 2);
+          if (!data) {
+            reject(new Error('Formato de archivo inválido.'));
+            return;
+          }
+          const mimeMatch = /^data:([^;]+);/.exec(meta || '');
+          resolve({ kind: 'image', mime: mimeMatch ? mimeMatch[1] : file.type || 'image/png', data, name: file.name || null });
+        };
+        reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo.'));
+        reader.readAsDataURL(file);
+      });
+
+      const parseTextEntry = (text) => {
+        const trimmed = text.trim();
+        if (!trimmed) return null;
+        if (trimmed.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === 'object' && parsed.kind) {
+              return parsed;
+            }
+          } catch (err) {
+            throw new Error('El JSON pegado no es válido.');
+          }
+          throw new Error('El JSON pegado no incluye el campo "kind".');
+        }
+
+        let base64 = trimmed;
+        let mime = 'image/png';
+        if (trimmed.startsWith('data:')) {
+          const [meta, data] = trimmed.split(',', 2);
+          if (!data) {
+            throw new Error('Data URL incompleta.');
+          }
+          base64 = data;
+          const mimeMatch = /^data:([^;]+);/.exec(meta || '');
+          if (mimeMatch) mime = mimeMatch[1];
+        }
+
+        if (!/^[A-Za-z0-9+/=\s]+$/.test(base64)) {
+          throw new Error('La cadena pegada no parece ser base64 ni JSON.');
+        }
+
+        return { kind: 'image', mime, data: base64.replace(/\s+/g, ''), name: null };
+      };
+
+      formEl.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!localStore) {
+          setStatus('No se pudo acceder al panel de origen para guardar los datos.', 'error');
+          return;
+        }
+
+        try {
+          let entry = null;
+          if (imageInput.files && imageInput.files[0]) {
+            entry = await readFileEntry(imageInput.files[0]);
+          } else if (pasteInput.value.trim()) {
+            entry = parseTextEntry(pasteInput.value);
+          } else {
+            setStatus('Subí un archivo o pegá datos para guardar la referencia.', 'warn');
+            return;
+          }
+
+          const saved = localStore.save(entry);
+          renderPreview(saved);
+          imageInput.value = '';
+          pasteInput.value = '';
+          setStatus('CM PASS actualizado correctamente. El dato quedó guardado en este navegador.', 'ok');
+        } catch (err) {
+          console.error(err);
+          setStatus(err.message || 'No se pudo procesar la información proporcionada.', 'error');
+        }
+      });
+
+      clearBtn.addEventListener('click', () => {
+        if (!localStore) {
+          setStatus('No se pudo acceder al panel de origen para limpiar los datos.', 'error');
+          return;
+        }
+        localStore.clear();
+        renderPreview(null);
+        setStatus('Se eliminó la referencia guardada de CM PASS.', 'warn');
+      });
+
+      exportBtn.addEventListener('click', async () => {
+        const current = localStore ? localStore.load() : null;
+        if (!current) {
+          setStatus('No hay datos cargados para exportar.', 'warn');
+          return;
+        }
+        const serialized = JSON.stringify(current, null, 2);
+        try {
+          await navigator.clipboard.writeText(serialized);
+          setStatus('JSON copiado al portapapeles. Compartilo por chat o correo.', 'ok');
+        } catch (err) {
+          console.error(err);
+          setStatus('Copiá manualmente el JSON que se abrió en la nueva pestaña.', 'warn');
+          const blob = new Blob([serialized], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+        }
+      });
+    })();
+  </scr' + 'ipt>
+</body>
+</html>`);
+  win.document.close();
 }
 
 class DataProcessor {
@@ -777,8 +1468,17 @@ class DataProcessor {
 
 const dataProcessor = new DataProcessor();
 
+const zoneFilterState = {
+  allOptions: [],
+  filteredOptions: [],
+  selected: new Set(),
+  search: '',
+  open: false
+};
+
 const Filters = {
   catec: false,
+  excludeCatec: false,
   ftth: false,
   excludeFTTH: false,
   nodoEstado: '',
@@ -794,6 +1494,7 @@ const Filters = {
   equipoMarca: '',
   equipoTerritorio: '',
   criticidad: '',
+  selectedZonas: [],
   
   apply(rows) {
     let filtered = rows.slice();
@@ -809,7 +1510,7 @@ const Filters = {
       return daysAgo <= this.days;
     });
     
-   if (!this.showAllStates) {
+    if (!this.showAllStates) {
       const estadosOcultosNorm = (CONFIG.estadosOcultosPorDefecto || []).map(normalizeEstado);
       const estadosPermitidosNorm = (CONFIG.estadosPermitidos || []).map(normalizeEstado);
 
@@ -828,10 +1529,22 @@ const Filters = {
       });
     }
     
-    if (this.catec) {
+    const catecActive = this.catec;
+    const excludeCatecActive = !catecActive && this.excludeCatec;
+
+    if (catecActive) {
       filtered = filtered.filter(r => {
         const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
-        return tipo.toUpperCase().includes('CATEC');
+        const upperTipo = String(tipo).toUpperCase();
+        return upperTipo.includes('CATEC');
+      });
+    }
+
+    if (excludeCatecActive) {
+      filtered = filtered.filter(r => {
+        const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
+        const upperTipo = String(tipo).toUpperCase();
+        return !upperTipo.includes('CATEC');
       });
     }
     
@@ -866,7 +1579,7 @@ const Filters = {
     
     if (this.quickSearch) {
       const queries = this.quickSearch.split(';').map(q => q.trim()).filter(Boolean);
-      
+
       filtered = filtered.filter(r => {
         const searchable = [
           r['Zona Tecnica HFC'],
@@ -884,10 +1597,19 @@ const Filters = {
         }
       });
     }
-    
+
+    if (this.selectedZonas && this.selectedZonas.length) {
+      const zonesSet = new Set(this.selectedZonas);
+
+      filtered = filtered.filter(r => {
+        const { zonaPrincipal } = dataProcessor.getZonaPrincipal(r);
+        return zonaPrincipal && zonesSet.has(zonaPrincipal);
+      });
+    }
+
     return filtered;
   },
-  
+
   applyToZones(zones) {
     let filtered = zones.slice();
 
@@ -915,7 +1637,12 @@ const Filters = {
         filtered = filtered.filter(z => !z.tieneAlarma);
       }
     }
-    
+
+    if (this.selectedZonas && this.selectedZonas.length) {
+      const zonesSet = new Set(this.selectedZonas);
+      filtered = filtered.filter(z => zonesSet.has(z.zona));
+    }
+
     if (this.ordenarPorIngreso === 'desc') {
       filtered.sort((a, b) => b.totalOTs - a.totalOTs);
     } else if (this.ordenarPorIngreso === 'asc') {
@@ -925,6 +1652,214 @@ const Filters = {
     return filtered;
   }
 };
+
+function initializeZoneFilterOptions(zones) {
+  const unique = Array.from(new Set((zones || []).filter(Boolean)));
+  unique.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+  zoneFilterState.allOptions = unique;
+  zoneFilterState.filteredOptions = unique.slice();
+  zoneFilterState.selected = new Set();
+  zoneFilterState.search = '';
+
+  const searchInput = document.getElementById('zoneFilterSearch');
+  if (searchInput) searchInput.value = '';
+
+  renderZoneFilterOptions();
+  updateZoneFilterSummary();
+  Filters.selectedZonas = [];
+}
+
+function renderZoneFilterOptions() {
+  const container = document.getElementById('zoneFilterOptions');
+  if (!container) return;
+
+  if (!zoneFilterState.allOptions.length) {
+    container.innerHTML = '<div class="zone-multiselect__empty">Cargá los reportes para habilitar el filtro por zonas</div>';
+    return;
+  }
+
+  if (!zoneFilterState.filteredOptions.length) {
+    container.innerHTML = '<div class="zone-multiselect__empty">No hay coincidencias para la búsqueda actual</div>';
+    return;
+  }
+
+  const optionsHtml = zoneFilterState.filteredOptions.map(z => {
+    const checked = zoneFilterState.selected.has(z) ? 'checked' : '';
+    return `<label class="zone-option"><input type="checkbox" value="${z}" ${checked}> <span>${z}</span></label>`;
+  }).join('');
+
+  container.innerHTML = optionsHtml;
+}
+
+function updateZoneFilterSummary() {
+  const summaryEl = document.getElementById('zoneFilterSummary');
+  const trigger = document.getElementById('zoneFilterTrigger');
+  if (!summaryEl) return;
+
+  const hasOptions = zoneFilterState.allOptions.length > 0;
+  if (trigger) trigger.disabled = !hasOptions;
+
+  if (!hasOptions) {
+    summaryEl.textContent = 'Sin datos (carga reportes)';
+    summaryEl.title = 'Carga los reportes para habilitar el filtro por zonas';
+    return;
+  }
+
+  const count = zoneFilterState.selected.size;
+
+  if (count === 0) {
+    summaryEl.textContent = 'Todas las zonas';
+    summaryEl.title = 'Mostrar todas las zonas disponibles';
+  } else if (count === 1) {
+    const [only] = Array.from(zoneFilterState.selected);
+    summaryEl.textContent = only;
+    summaryEl.title = only;
+  } else {
+    summaryEl.textContent = `${count} zonas seleccionadas`;
+    const listPreview = Array.from(zoneFilterState.selected).slice(0, 8).join(', ');
+    summaryEl.title = listPreview;
+  }
+}
+
+function toggleZoneFilter(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const container = document.getElementById('zoneFilter');
+  if (!container) return;
+
+  const willOpen = !container.classList.contains('open');
+  if (willOpen) {
+    container.classList.add('open');
+    zoneFilterState.open = true;
+    renderZoneFilterOptions();
+
+    setTimeout(() => {
+      const searchInput = document.getElementById('zoneFilterSearch');
+      if (searchInput) {
+        searchInput.focus();
+        if (zoneFilterState.search) {
+          const pos = zoneFilterState.search.length;
+          searchInput.setSelectionRange(pos, pos);
+        }
+      }
+    }, 0);
+  } else {
+    closeZoneFilter();
+  }
+}
+
+function closeZoneFilter() {
+  const container = document.getElementById('zoneFilter');
+  if (!container) return;
+  container.classList.remove('open');
+  zoneFilterState.open = false;
+}
+
+function handleZoneFilterOutsideClick(event) {
+  const container = document.getElementById('zoneFilter');
+  if (!container) return;
+  if (!container.contains(event.target)) {
+    closeZoneFilter();
+  }
+}
+
+function onZoneFilterSearch(event) {
+  const value = event.target.value || '';
+  zoneFilterState.search = value;
+
+  if (!zoneFilterState.allOptions.length) {
+    renderZoneFilterOptions();
+    return;
+  }
+
+  const normalizedTerm = TextUtils.normalize(value);
+  if (!normalizedTerm) {
+    zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+  } else {
+    zoneFilterState.filteredOptions = zoneFilterState.allOptions.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
+  }
+
+  renderZoneFilterOptions();
+}
+
+function onZoneOptionChange(event) {
+  const target = event.target;
+  if (!target || target.type !== 'checkbox') return;
+
+  const zone = target.value;
+  if (!zone) return;
+
+  if (target.checked) {
+    zoneFilterState.selected.add(zone);
+  } else {
+    zoneFilterState.selected.delete(zone);
+  }
+
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+  updateZoneFilterSummary();
+  applyFilters();
+}
+
+function selectAllZones(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  if (!zoneFilterState.allOptions.length) return;
+
+  const hasSearch = Boolean(zoneFilterState.search);
+  const source = hasSearch ? zoneFilterState.filteredOptions : zoneFilterState.allOptions;
+  if (!source.length) return;
+
+  source.forEach(z => zoneFilterState.selected.add(z));
+
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+  renderZoneFilterOptions();
+  updateZoneFilterSummary();
+  applyFilters();
+}
+
+function resetZoneFilterState(options = {}) {
+  const { apply = false, keepSearch = false } = options;
+
+  zoneFilterState.selected = new Set();
+
+  if (!keepSearch) {
+    zoneFilterState.search = '';
+    zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+    const searchInput = document.getElementById('zoneFilterSearch');
+    if (searchInput) searchInput.value = '';
+  } else {
+    const normalizedTerm = TextUtils.normalize(zoneFilterState.search);
+    if (!normalizedTerm) {
+      zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+    } else {
+      zoneFilterState.filteredOptions = zoneFilterState.allOptions.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
+    }
+  }
+
+  renderZoneFilterOptions();
+  updateZoneFilterSummary();
+  Filters.selectedZonas = [];
+
+  if (apply) {
+    applyFilters();
+  }
+}
+
+function clearZoneSelection(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  resetZoneFilterState({ apply: true, keepSearch: true });
+}
 
 const UIRenderer = {
   renderStats(data) {
@@ -956,23 +1891,44 @@ const UIRenderer = {
     `;
   },
   
+  normalizeCounts(counts) {
+    if (!Array.isArray(counts)) return [];
+
+    return counts.map(c => {
+      if (c === null || c === undefined) return 0;
+      if (typeof c === 'number') {
+        return Number.isFinite(c) ? c : 0;
+      }
+
+      const parsed = parseFloat(String(c).trim().replace(',', '.'));
+      return Number.isFinite(parsed) ? parsed : 0;
+    });
+  },
+
   renderSparkline(counts, labels) {
-    const max = Math.max(...counts, 1);
+    const safeCounts = this.normalizeCounts(counts);
+
+    if (!safeCounts.length) {
+      return '<div class="sparkline-placeholder">Sin datos</div>';
+    }
+
     const width = 120;
     const height = 30;
-    const barWidth = width / counts.length;
-    
+    const max = Math.max(...safeCounts, 1);
+    const barWidth = width / safeCounts.length;
+
     let svg = `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
-    
-    counts.forEach((count, i) => {
-      const barHeight = (count / max) * height;
+
+    safeCounts.forEach((count, i) => {
+      const normalized = max > 0 ? (count / max) : 0;
+      const barHeight = normalized * height;
       const x = i * barWidth;
       const y = height - barHeight;
       const color = count >= max * 0.7 ? '#D13438' : count >= max * 0.4 ? '#F7630C' : '#0078D4';
-      
-      svg += `<rect x="${x}" y="${y}" width="${barWidth - 2}" height="${barHeight}" fill="${color}" rx="2"/>`;
+
+      svg += `<rect x="${x}" y="${y}" width="${Math.max(barWidth - 2, 1)}" height="${barHeight}" fill="${color}" rx="2"/>`;
     });
-    
+
     svg += '</svg>';
     return svg;
   },
@@ -1363,7 +2319,24 @@ function setupEventListeners() {
   document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
   document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
   
-  document.getElementById('filterCATEC').addEventListener('change', applyFilters);
+  const filterCatec = document.getElementById('filterCATEC');
+  const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
+
+  if (filterCatec && filterExcludeCatec) {
+    filterCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterExcludeCatec.checked = false;
+      }
+      applyFilters();
+    });
+
+    filterExcludeCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterCatec.checked = false;
+      }
+      applyFilters();
+    });
+  }
   document.getElementById('showAllStates').addEventListener('change', applyFilters);
   document.getElementById('filterFTTH').addEventListener('change', e => {
     if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
@@ -1381,6 +2354,18 @@ function setupEventListeners() {
   document.getElementById('filterAlarma').addEventListener('change', applyFilters);
   document.getElementById('quickSearch').addEventListener('input', debounce(applyFilters, 300));
   document.getElementById('ordenarPorIngreso').addEventListener('change', applyFilters);
+
+  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
+  if (zoneFilterSearch) {
+    zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
+  }
+
+  const zoneFilterOptions = document.getElementById('zoneFilterOptions');
+  if (zoneFilterOptions) {
+    zoneFilterOptions.addEventListener('change', onZoneOptionChange);
+  }
+
+  document.addEventListener('click', handleZoneFilterOutsideClick);
 }
 
 async function loadFile(e, tipo) {
@@ -1470,7 +2455,7 @@ function populateFilters() {
   )];
   const terrSelect = document.getElementById('filterTerritorio');
   terrSelect.innerHTML = '<option value="">Todos</option>' + territorios.sort().map(t => `<option value="${t}">${t}</option>`).join('');
-  
+
   const cmtsList = [...new Set(
     allZones
       .map(z => z.cmts)
@@ -1478,12 +2463,23 @@ function populateFilters() {
   )];
   const cmtsSelect = document.getElementById('filterCMTS');
   cmtsSelect.innerHTML = '<option value="">Todos</option>' + cmtsList.sort().map(c => `<option value="${c}">${c}</option>`).join('');
+
+  const zoneNames = [...new Set(
+    (currentData.zonas || [])
+      .map(z => z.zona)
+      .filter(Boolean)
+  )];
+  initializeZoneFilterOptions(zoneNames);
 }
 
 function applyFilters() {
   if (!currentData) return;
   
-  Filters.catec = document.getElementById('filterCATEC').checked;
+  const catecEl = document.getElementById('filterCATEC');
+  const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+
+  Filters.catec = catecEl ? catecEl.checked : false;
+  Filters.excludeCatec = excludeCatecEl ? excludeCatecEl.checked : false;
   Filters.showAllStates = document.getElementById('showAllStates').checked;
   Filters.ftth = document.getElementById('filterFTTH').checked;
   Filters.excludeFTTH = document.getElementById('filterExcludeFTTH').checked;
@@ -1495,7 +2491,8 @@ function applyFilters() {
   Filters.alarma = document.getElementById('filterAlarma').value;
   Filters.quickSearch = document.getElementById('quickSearch').value;
   Filters.ordenarPorIngreso = document.getElementById('ordenarPorIngreso').value;
-  
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+
   const filtered = Filters.apply(currentData.ordenes);
   
   const zones = dataProcessor.processZones(filtered);
@@ -1534,7 +2531,11 @@ function applyFilters() {
 }
 
 function resetFiltersState() {
-  document.getElementById('filterCATEC').checked = false;
+  const catecEl = document.getElementById('filterCATEC');
+  const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+
+  if (catecEl) catecEl.checked = false;
+  if (excludeCatecEl) excludeCatecEl.checked = false;
   document.getElementById('showAllStates').checked = false;
   document.getElementById('filterFTTH').checked = false;
   document.getElementById('filterExcludeFTTH').checked = false;
@@ -1547,6 +2548,8 @@ function resetFiltersState() {
   document.getElementById('quickSearch').value = '';
   document.getElementById('ordenarPorIngreso').value = 'desc';
   Filters.criticidad = '';
+  resetZoneFilterState();
+  closeZoneFilter();
 }
 
 function clearFilters() {
@@ -1930,20 +2933,32 @@ function renderModalContent() {
     });
   }
   
+  const chartCounts = UIRenderer.normalizeCounts(currentZone.last7DaysCounts);
+  const chartLabels = Array.isArray(currentZone.last7Days) ? currentZone.last7Days : [];
+  const maxChartValue = Math.max(...chartCounts, 1);
+
   let html = '<div class="chart-container">';
   html += '<div class="chart-title">📊 Distribución de Ingresos (7 días)</div>';
-  html += '<div style="display: flex; justify-content: space-around; align-items: flex-end; height: 150px; padding: 10px;">';
-  
-  currentZone.last7DaysCounts.forEach((count, i) => {
-    const height = currentZone.last7DaysCounts.length > 0 ? (count / Math.max(...currentZone.last7DaysCounts, 1)) * 120 : 0;
-    html += `<div style="text-align: center;">
-      <div style="width: 60px; height: ${height}px; background: linear-gradient(180deg, #0078D4 0%, #005A9E 100%); border-radius: 4px 4px 0 0; margin: 0 auto;"></div>
-      <div style="font-size: 0.75rem; font-weight: 700; margin-top: 4px;">${count}</div>
-      <div style="font-size: 0.6875rem; color: var(--text-secondary);">${currentZone.last7Days[i]}</div>
-    </div>`;
-  });
-  
-  html += '</div></div>';
+
+  if (!chartCounts.length) {
+    html += '<div class="sparkline-placeholder" style="height: 150px; display: flex; align-items: center; justify-content: center;">Sin datos</div>';
+  } else {
+    html += '<div style="display: flex; justify-content: space-around; align-items: flex-end; height: 150px; padding: 10px;">';
+
+    chartCounts.forEach((count, i) => {
+      const barHeight = maxChartValue > 0 ? (count / maxChartValue) * 120 : 0;
+      const label = chartLabels[i] || '';
+      html += `<div style="text-align: center;">
+        <div style="width: 60px; height: ${barHeight}px; background: linear-gradient(180deg, #0078D4 0%, #005A9E 100%); border-radius: 4px 4px 0 0; margin: 0 auto;"></div>
+        <div style="font-size: 0.75rem; font-weight: 700; margin-top: 4px;">${count}</div>
+        <div style="font-size: 0.6875rem; color: var(--text-secondary);">${label}</div>
+      </div>`;
+    });
+
+    html += '</div>';
+  }
+
+  html += '</div>';
   
   html += `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
     <strong>Total órdenes mostradas:</strong> ${ordenes.length} de ${currentZone.ordenes.length}

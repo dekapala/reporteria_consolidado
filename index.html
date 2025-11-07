@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Panel Fulfillment v4.9 MEJORADO</title>
+  <title>Panel Fulfillment v5.0 COMPLETO</title>
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
@@ -21,8 +21,8 @@
             <line x1="12" y1="22.08" x2="12" y2="12"></line>
           </svg>
           <div>
-            <h1>📊 Panel Fulfillment <span class="version-badge">v4.9 MEJORADO</span></h1>
-            <p>✨ Equipos • Alarmas FMS • Edificios • CMTS • Filtros Avanzados • Ordenamiento</p>
+            <h1>📊 Panel Fulfillment <span class="version-badge">v5.0 COMPLETO</span></h1>
+            <p>✨ Filtro selectivo de zonas • Sparklines normalizadas • Históricos consistentes • Alarmas FMS • Equipos • Filtro anti-CATEC</p>
           </div>
         </div>
         <div class="header-actions">
@@ -31,12 +31,21 @@
               🔧 Utilidades
             </button>
             <div class="utilities-menu" id="utilitiesMenu">
-              <div class="utilities-menu-item" onclick="openPlanillasNewTab()">
-                📋 Planillas
+              <div class="utilities-menu-group">
+                <div class="utilities-menu-header">Recursos rápidos</div>
+                <div class="utilities-menu-item" onclick="openPlanillasNewTab()">
+                  📋 Planillas
+                </div>
+                <div class="utilities-menu-item" onclick="openUsefulLinks()">
+                  🔗 Links útiles
+                </div>
+                <div class="utilities-menu-item" onclick="openCmPass()">
+                  🔐 CM PASS
+                </div>
               </div>
             </div>
           </div>
-          <button class="btn-help" onclick="toast('💡 v4.9 Mejorado: Filtros de equipos + Ordenamiento por ingresos')">
+          <button class="btn-help" onclick="toast('💡 v5.0 Completo: Filtro selectivo de zonas estilo Excel + Links útiles y CM PASS con carga local sin binarios, sparklines normalizadas y filtro anti-CATEC (últimas 24h)')">
             💡 Info
           </button>
         </div>
@@ -94,6 +103,13 @@
         <label class="checkbox-label">
           <input type="checkbox" id="filterCATEC">
           <span>Solo CATEC</span>
+        </label>
+        <label class="toggle-control">
+          <input type="checkbox" id="filterExcludeCATEC">
+          <span class="toggle-track">
+            <span class="toggle-thumb"></span>
+          </span>
+          <span class="toggle-text">Excluir CATEC</span>
         </label>
         <label class="checkbox-label">
           <input type="checkbox" id="showAllStates">
@@ -168,9 +184,32 @@
       <div class="filter-group filter-search">
         <div class="filter-label">🔍 Búsqueda Múltiple</div>
         <input type="text" id="quickSearch" class="input-field" placeholder="Ej: VLU901;CON376D;RSC397B">
-        <div class="search-help">Usa ; para múltiples zonas • Sin acentos</div>
+        <div class="search-help">Usa ; para múltiples zonas • Sin acentos • Selecciona zonas específicas con el filtro múltiple</div>
       </div>
-      
+
+      <div class="filter-group filter-zonas">
+        <div class="filter-label">📍 Filtro selectivo de zonas</div>
+        <div class="zone-multiselect" id="zoneFilter">
+          <button type="button" class="zone-multiselect__trigger" id="zoneFilterTrigger" onclick="toggleZoneFilter(event)">
+            <span id="zoneFilterSummary">Sin datos (carga reportes)</span>
+            <span class="zone-multiselect__chevron">▾</span>
+          </button>
+          <div class="zone-multiselect__dropdown" id="zoneFilterDropdown">
+            <div class="zone-multiselect__search">
+              <input type="text" id="zoneFilterSearch" placeholder="Buscar zona..." autocomplete="off">
+              <div class="zone-multiselect__hint">Escribe las primeras letras para ver coincidencias y marca las zonas a mostrar</div>
+            </div>
+            <div class="zone-multiselect__options" id="zoneFilterOptions">
+              <div class="zone-multiselect__empty">Cargá los reportes para habilitar el filtro por zonas</div>
+            </div>
+            <div class="zone-multiselect__actions">
+              <button type="button" class="zone-action" onclick="selectAllZones(event)">Seleccionar todo</button>
+              <button type="button" class="zone-action" onclick="clearZoneSelection(event)">Limpiar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="filter-actions">
         <button class="btn btn-secondary" onclick="clearFilters()">
           🔄 Limpiar
@@ -241,7 +280,7 @@
     </main>
 
     <footer class="app-footer">
-      <p>Panel Fulfillment v4.9 MEJORADO © 2025</p>
+      <p>Panel Fulfillment v5.0 COMPLETO © 2025</p>
       <p class="credits">Creado por Gabriel Palazzini by Checho</p>
     </footer>
   </div>
