@@ -800,14 +800,28 @@ const Filters = {
       return daysAgo <= this.days;
     });
     
-    if (!this.showAllStates) {
-      filtered = filtered.filter(r => {
-        const estRaw = (r['Estado.1'] || r['Estado'] || r['Estado.2'] || '').toString().toUpperCase().trim();
-        if (!estRaw) return false;
-        if (CONFIG.estadosOcultosPorDefecto.includes(estRaw)) return false;
-        return CONFIG.estadosPermitidos.includes(estRaw);
-      });
-    }
+ // Filtrar por estados permitidos (normalizando tildes)
+if (!this.showAllStates) {
+  filtered = filtered.filter(r => {
+    const estRaw = r['Estado.1'] || r['Estado'] || r['Estado.2'] || '';
+    const est = normalizeEstado(estRaw);
+    if (!est) return false;
+
+    // ¿Está en la lista de estados ocultos?
+    const estaOculto = CONFIG.estadosOcultosPorDefecto.some(
+      e => normalizeEstado(e) === est
+    );
+    if (estaOculto) return false;
+
+    // ¿Está en la lista de estados permitidos?
+    const estaPermitido = CONFIG.estadosPermitidos.some(
+      e => normalizeEstado(e) === est
+    );
+
+    return estaPermitido;
+  });
+}
+
     
     if (this.catec) {
       filtered = filtered.filter(r => {
