@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Panel Fulfillment v4.9 MEJORADO</title>
+  <title>Panel Fulfillment v5.0 COMPLETO</title>
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   
@@ -21,8 +21,8 @@
             <line x1="12" y1="22.08" x2="12" y2="12"></line>
           </svg>
           <div>
-            <h1>📊 Panel Fulfillment <span class="version-badge">v4.9 MEJORADO</span></h1>
-            <p>✨ Equipos • Alarmas FMS • Edificios • CMTS • Filtros Avanzados • Ordenamiento</p>
+            <h1>📊 Panel Fulfillment <span class="version-badge">v5.0 COMPLETO</span></h1>
+            <p>✨ Sparklines normalizadas • Históricos consistentes • Alarmas FMS • Equipos • Filtro anti-CATEC</p>
           </div>
         </div>
         <div class="header-actions">
@@ -36,7 +36,7 @@
               </div>
             </div>
           </div>
-          <button class="btn-help" onclick="toast('💡 v4.9 Mejorado: Filtros de equipos + Ordenamiento por ingresos')">
+          <button class="btn-help" onclick="toast('💡 v5.0 Completo: Sparklines normalizadas + histórico del modal unificado + filtro anti-CATEC (24h)')">
             💡 Info
           </button>
         </div>
@@ -94,6 +94,13 @@
         <label class="checkbox-label">
           <input type="checkbox" id="filterCATEC">
           <span>Solo CATEC</span>
+        </label>
+        <label class="toggle-control">
+          <input type="checkbox" id="filterExcludeCATEC">
+          <span class="toggle-track">
+            <span class="toggle-thumb"></span>
+          </span>
+          <span class="toggle-text">Excluir CATEC</span>
         </label>
         <label class="checkbox-label">
           <input type="checkbox" id="showAllStates">
@@ -241,7 +248,7 @@
     </main>
 
     <footer class="app-footer">
-      <p>Panel Fulfillment v4.9 MEJORADO © 2025</p>
+      <p>Panel Fulfillment v5.0 COMPLETO © 2025</p>
       <p class="credits">Creado por Gabriel Palazzini by Checho</p>
     </footer>
   </div>
