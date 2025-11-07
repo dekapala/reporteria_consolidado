@@ -170,7 +170,11 @@ const TextUtils = {
 
 function normalizeEstado(estado) {
   if (!estado) return '';
-  return TextUtils.normalize(estado).toUpperCase();
+  return String(estado)
+    .toUpperCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 function toast(msg) {
