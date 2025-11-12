@@ -753,64 +753,6 @@ td.center { text-align: center; }
   font-style: italic;
 }
 
-.diagnostico-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-width: 260px;
-}
-
-.diagnostico-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 8px;
-  border-radius: 10px;
-  background: #EFF6FF;
-  color: #1E3A8A;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  line-height: 1;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.diagnostico-tag--more {
-  background: #E5E7EB;
-  color: #111827;
-}
-
-.diagnostico-tag--empty {
-  background: #F3F4F6;
-  color: #6B7280;
-}
-
-.diagnostico-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding: 12px 16px;
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-md);
-  border-left: 4px solid var(--win-blue);
-}
-
-.diagnostico-summary__title {
-  font-size: 0.8125rem;
-  font-weight: 700;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.diagnostico-summary--empty {
-  color: var(--text-secondary);
-  font-style: italic;
-  border-left-color: var(--border-subtle);
-}
-
 .modal-backdrop {
   display: none;
   position: fixed;

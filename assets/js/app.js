@@ -269,7 +269,11 @@ const TextUtils = {
 
 function normalizeEstado(estado) {
   if (!estado) return '';
-  return TextUtils.normalize(estado).toUpperCase();
+  return String(estado)
+    .toUpperCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 function toast(msg) {
@@ -304,10 +308,7 @@ document.addEventListener('click', (e) => {
 });
 
 function openPlanillasNewTab() {
-  const utilitiesMenu = document.getElementById('utilitiesMenu');
-  if (utilitiesMenu) {
-    utilitiesMenu.classList.remove('show');
-  }
+  document.getElementById('utilitiesMenu').classList.remove('show');
 
   const newWindow = window.open('', '_blank', 'width=1000,height=800');
   if (!newWindow) {
@@ -433,10 +434,7 @@ Generado desde Panel Fulfillment v5.0\`;
 }
 
 function openUsefulLinks() {
-  const utilitiesMenu = document.getElementById('utilitiesMenu');
-  if (utilitiesMenu) {
-    utilitiesMenu.classList.remove('show');
-  }
+  document.getElementById('utilitiesMenu').classList.remove('show');
 
   const win = window.open('', '_blank', 'width=1200,height=860,scrollbars=yes');
   if (!win) {
@@ -614,36 +612,6 @@ function openUsefulLinks() {
 </body>
 </html>`);
   win.document.close();
-}
-
-async function readFileAsUint8Array(file){
-  if (!file) return new Uint8Array();
-
-  if (typeof file.arrayBuffer === 'function') {
-    const buffer = await file.arrayBuffer();
-    return new Uint8Array(buffer);
-  }
-
-  if (typeof FileReader === 'undefined') {
-    throw new Error('FileReader no disponible en este navegador');
-  }
-
-  return await new Promise((resolve, reject) => {
-    try {
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          resolve(new Uint8Array(reader.result));
-        } catch (conversionError) {
-          reject(conversionError);
-        }
-      };
-      reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo'));
-      reader.readAsArrayBuffer(file);
-    } catch (error) {
-      reject(error);
-    }
-  });
 }
 
 class DataProcessor {
@@ -1115,53 +1083,6 @@ const zoneFilterState = {
   open: false
 };
 
-const FILTER_STORAGE_KEY = 'reporteria.consolidado.filters.v1';
-
-const filterStorage = (() => {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const testKey = '__filters_test__';
-      window.localStorage.setItem(testKey, 'ok');
-      window.localStorage.removeItem(testKey);
-      return window.localStorage;
-    }
-  } catch (err) {
-    console.warn('Storage no disponible para filtros persistentes', err);
-  }
-  return null;
-})();
-
-const FilterPersistence = {
-  load() {
-    if (!filterStorage) return null;
-    try {
-      const raw = filterStorage.getItem(FILTER_STORAGE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === 'object' ? parsed : null;
-    } catch (err) {
-      console.warn('No se pudieron cargar los filtros guardados', err);
-      return null;
-    }
-  },
-  save(state) {
-    if (!filterStorage) return;
-    try {
-      filterStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
-    } catch (err) {
-      console.warn('No se pudieron guardar los filtros', err);
-    }
-  },
-  clear() {
-    if (!filterStorage) return;
-    try {
-      filterStorage.removeItem(FILTER_STORAGE_KEY);
-    } catch {}
-  }
-};
-
-let savedFiltersSnapshot = null;
-
 const Filters = {
   catec: false,
   excludeCatec: false,
@@ -1339,61 +1260,21 @@ const Filters = {
   }
 };
 
-function getCurrentFiltersSnapshot() {
-  return {
-    catec: Boolean(Filters.catec),
-    excludeCatec: Boolean(Filters.excludeCatec),
-    ftth: Boolean(Filters.ftth),
-    excludeFTTH: Boolean(Filters.excludeFTTH),
-    nodoEstado: Filters.nodoEstado || '',
-    cmts: Filters.cmts || '',
-    days: Filters.days || CONFIG.defaultDays,
-    territorio: Filters.territorio || '',
-    sistema: Filters.sistema || '',
-    alarma: Filters.alarma || '',
-    quickSearch: Filters.quickSearch || '',
-    showAllStates: Boolean(Filters.showAllStates),
-    ordenarPorIngreso: Filters.ordenarPorIngreso || 'desc',
-    selectedZonas: Array.isArray(Filters.selectedZonas) ? Filters.selectedZonas.slice() : [],
-    criticidad: Filters.criticidad || '',
-    zoneSearch: zoneFilterState.search || '',
-    equipoModelo: Array.isArray(Filters.equipoModelo) ? Filters.equipoModelo.slice() : [],
-    equipoMarca: Filters.equipoMarca || '',
-    equipoTerritorio: Filters.equipoTerritorio || ''
-  };
-}
-
-function persistFilters() {
-  const snapshot = getCurrentFiltersSnapshot();
-  savedFiltersSnapshot = snapshot;
-  FilterPersistence.save(snapshot);
-}
-
-function initializeZoneFilterOptions(zones, options = {}) {
+function initializeZoneFilterOptions(zones) {
   const unique = Array.from(new Set((zones || []).filter(Boolean)));
   unique.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
-  const preselected = Array.isArray(options.selected) ? options.selected : [];
-  const searchTerm = typeof options.search === 'string' ? options.search : '';
-  const validOptions = new Set(unique);
-
   zoneFilterState.allOptions = unique;
-  zoneFilterState.selected = new Set(preselected.filter(z => validOptions.has(z)));
-  zoneFilterState.search = searchTerm;
+  zoneFilterState.filteredOptions = unique.slice();
+  zoneFilterState.selected = new Set();
+  zoneFilterState.search = '';
 
   const searchInput = document.getElementById('zoneFilterSearch');
-  if (searchInput) searchInput.value = searchTerm;
-
-  if (searchTerm) {
-    const normalizedTerm = TextUtils.normalize(searchTerm);
-    zoneFilterState.filteredOptions = unique.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
-  } else {
-    zoneFilterState.filteredOptions = unique.slice();
-  }
+  if (searchInput) searchInput.value = '';
 
   renderZoneFilterOptions();
   updateZoneFilterSummary();
-  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+  Filters.selectedZonas = [];
 }
 
 function renderZoneFilterOptions() {
@@ -1998,19 +1879,19 @@ function toggleEquiposGrupo(zona){
 
 const ZONE_EXPORT_HEADERS = [
   'Fecha',
-  'Zona/CAC',
-  'Docm TM',
-  'Tecnico',
-  'Telefono',
+  'ZonaHFC',
+  'ZonaFTTH',
+  'Territorio',
+  'Ubicacion',
   'Caso',
-  'Numero Orden',
-  'Numero ONU',
-  'Diagnostico Tecnico',
+  'NumeroOrden',
+  'NumeroOTuca',
   'Diagnostico',
-  'Tipo Trabajo',
-  'Estado llegada',
-  'Estado 2',
-  'Estado 3',
+  'Tipo',
+  'TipoTrabajo',
+  'Estado1',
+  'Estado2',
+  'Estado3',
   'MAC'
 ];
 
@@ -2021,49 +1902,47 @@ const ORDER_FIELD_KEYS = {
     'Fecha de inicio',
     'Fecha'
   ],
-  zona: [
+  zonaHFC: [
     'Zona Tecnica HFC',
     'Zona Tecnica',
     'Zona HFC',
     'Zona'
   ],
-  docmTm: [
-    'Docm TM',
-    'DOCM TM',
-    'DocmTM',
-    'DOCMTM',
-    'Doc TM',
-    'DOC TM',
-    'Documento TM',
-    'Documento Técnico',
-    'Documento Tecnico',
-    'Doc. TM',
-    'Doc Técnico',
-    'Doc Tecnico'
+  zonaFTTH: [
+    'Zona Tecnica FTTH',
+    'Zona FTTH'
   ],
-  tecnico: [
-    'Tecnico',
-    'Técnico',
-    'Tecnico Asignado',
-    'Técnico Asignado',
-    'Nombre Tecnico',
-    'Nombre Técnico',
-    'Tecnico Responsable',
-    'Técnico Responsable',
-    'Tecnico a cargo',
-    'Técnico a cargo'
+  territorio: [
+    'Territorio de servicio: Nombre',
+    'Territorio',
+    'Territorio servicio'
   ],
-  telefono: [
-    'Telefono',
-    'Teléfono',
-    'Telefono Contacto',
-    'Teléfono Contacto',
-    'Telefono de contacto',
-    'Teléfono de contacto',
-    'Numero de contacto',
-    'Número de contacto',
-    'Telefono Cliente',
-    'Teléfono Cliente'
+  ubicacionCalle: [
+    'Calle',
+    'Dirección',
+    'Direccion',
+    'Domicilio',
+    'Dirección del servicio',
+    'Direccion del servicio',
+    'Dirección Servicio'
+  ],
+  ubicacionAltura: [
+    'Altura',
+    'Altura (N°)',
+    'Altura domicilio',
+    'Número',
+    'Numero',
+    'Nro',
+    'Altura Domicilio'
+  ],
+  ubicacionLocalidad: [
+    'Localidad',
+    'Localidad Instalación',
+    'Localidad Instalacion',
+    'Ciudad',
+    'Partido',
+    'Distrito',
+    'Provincia'
   ],
   caso: [
     'Número del caso',
@@ -2090,26 +1969,32 @@ const ORDER_FIELD_KEYS = {
     'Numero de orden de trabajo',
     'N° OT'
   ],
-  numeroONU: [
-    'Número ONU',
-    'Numero ONU',
-    'Numero ONU Sivel',
-    'Número ONU Sivel',
-    'Numero ONU Cliente',
-    'Número ONU Cliente',
-    'NumeroONU',
-    'ONU Numero',
-    'Numero ONU SISE',
-    'Número ONU SISE'
+  numeroOTuca: [
+    'Número OT UCA',
+    'Numero OT UCA',
+    'Número de OT UCA',
+    'Numero de OT UCA',
+    'NumeroOTUca',
+    'OT UCA',
+    'OT_UCA',
+    'Nro OT UCA'
   ],
-  diagnosticoTecnico: DIAGNOSTICO_TECNICO_KEYS,
   diagnostico: [
+    'Diagnostico Tecnico',
+    'Diagnóstico Técnico',
     'Diagnostico',
     'Diagnóstico',
     'Diagnostico Cliente',
-    'Diagnóstico Cliente',
-    'Diagnostico del cliente',
-    'Diagnóstico del cliente'
+    'Diagnostico tecnico'
+  ],
+  tipo: [
+    'Tipo',
+    'Tipo de caso',
+    'Tipo caso',
+    'Tipo OPEN',
+    'Tipo FAN',
+    'Tipo de OT',
+    'Tipo Servicio'
   ],
   tipoTrabajo: [
     'Tipo de trabajo: Nombre de tipo de trabajo',
@@ -2117,13 +2002,10 @@ const ORDER_FIELD_KEYS = {
     'Tipo Trabajo',
     'TipoTrabajo'
   ],
-  estadoLlegada: [
-    'Estado llegada',
-    'Estado Llegada',
-    'Estado llegada técnico',
-    'Estado llegada Tecnico',
-    'Estado de llegada',
-    'Estado Llegada Técnico'
+  estado1: [
+    'Estado.1',
+    'Estado',
+    'Estado inicial'
   ],
   estado2: [
     'Estado.2',
@@ -2161,67 +2043,25 @@ function pickFirstValue(obj, keys){
   return '';
 }
 
-function collectDeviceIdentifiers(order, meta, fallbackMac){
-  const summaryList = [];
-  const seenSummaries = new Set();
-  const macs = [];
-  const serials = [];
+function buildUbicacion(order){
+  const calle = pickFirstValue(order, ORDER_FIELD_KEYS.ubicacionCalle);
+  const altura = pickFirstValue(order, ORDER_FIELD_KEYS.ubicacionAltura);
+  const localidad = pickFirstValue(order, ORDER_FIELD_KEYS.ubicacionLocalidad);
 
-  const pushEntry = (macValue, serialValue) => {
-    const mac = macValue == null ? '' : String(macValue).trim();
-    const serial = serialValue == null ? '' : String(serialValue).trim();
-    if (!mac && !serial) return;
-
-    const normalizedMac = mac ? mac.toUpperCase() : '';
-    if (normalizedMac && !macs.includes(normalizedMac)) {
-      macs.push(normalizedMac);
-    }
-
-    if (serial && !serials.includes(serial)) {
-      serials.push(serial);
-    }
-
-    const parts = [];
-    if (normalizedMac) parts.push(normalizedMac);
-    if (serial) parts.push(`SN:${serial}`);
-    const summary = parts.join(' / ');
-    if (summary && !seenSummaries.has(summary)) {
-      summaryList.push(summary);
-      seenSummaries.add(summary);
-    }
-  };
-
-  if (meta && Array.isArray(meta.dispositivos)) {
-    meta.dispositivos.forEach(d => {
-      if (!d) return;
-      const macVal = d.macAddress || d.mac;
-      const serialVal = d.serialNumber || d.serial;
-      pushEntry(macVal, serialVal);
-    });
+  const parts = [];
+  if (calle && altura){
+    parts.push(`${calle} ${altura}`.trim());
+  } else if (calle){
+    parts.push(calle);
+  } else if (altura){
+    parts.push(altura);
   }
 
-  if (fallbackMac) {
-    pushEntry(fallbackMac, '');
+  if (localidad){
+    parts.push(localidad);
   }
 
-  Object.entries(order || {}).forEach(([key, value]) => {
-    if (value == null) return;
-    const normalizedKey = stripAccents(String(key).toLowerCase());
-    if (!normalizedKey) return;
-    if (normalizedKey.includes('mac') && typeof value === 'string') {
-      pushEntry(value, '');
-      return;
-    }
-    if (normalizedKey.includes('serie') || normalizedKey.includes('serial')) {
-      pushEntry('', value);
-    }
-  });
-
-  return {
-    summary: summaryList.join('\n'),
-    firstMac: macs[0] || '',
-    firstSerial: serials[0] || ''
-  };
+  return parts.join(', ');
 }
 
 function buildOrderExportRow(order, zoneInfo){
@@ -2233,20 +2073,17 @@ function buildOrderExportRow(order, zoneInfo){
     fecha = DateUtils.format(meta.fecha);
   }
 
-  const zona = meta.zonaHFC || zoneInfo?.zona || pickFirstValue(order, ORDER_FIELD_KEYS.zona) || '';
-  const docmTm = pickFirstValue(order, ORDER_FIELD_KEYS.docmTm);
-  const tecnico = meta.tecnico || pickFirstValue(order, ORDER_FIELD_KEYS.tecnico);
-  const telefono = pickFirstValue(order, ORDER_FIELD_KEYS.telefono);
+  const zonaHFC = meta.zonaHFC || zoneInfo?.zonaHFC || pickFirstValue(order, ORDER_FIELD_KEYS.zonaHFC) || zoneInfo?.zona || '';
+  const zonaFTTH = meta.zonaFTTH || zoneInfo?.zonaFTTH || pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH);
+  const territorio = meta.territorio || pickFirstValue(order, ORDER_FIELD_KEYS.territorio);
+  const ubicacion = buildUbicacion(order);
   const caso = meta.numeroCaso || pickFirstValue(order, ORDER_FIELD_KEYS.caso);
   const numeroOrden = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOrden);
-  const numeroONU = pickFirstValue(order, ORDER_FIELD_KEYS.numeroONU);
-  const diagnosticoTecnico = meta.diagnosticoTecnico || pickFirstValue(order, ORDER_FIELD_KEYS.diagnosticoTecnico);
-  let diagnostico = meta.diagnostico || pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
-  if (!diagnostico && diagnosticoTecnico) {
-    diagnostico = diagnosticoTecnico;
-  }
+  const numeroOTuca = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOTuca);
+  const diagnostico = pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
+  const tipo = pickFirstValue(order, ORDER_FIELD_KEYS.tipo) || zoneInfo?.tipo || '';
   const tipoTrabajo = pickFirstValue(order, ORDER_FIELD_KEYS.tipoTrabajo);
-  const estadoLlegada = pickFirstValue(order, ORDER_FIELD_KEYS.estadoLlegada);
+  const estado1 = pickFirstValue(order, ORDER_FIELD_KEYS.estado1);
   let estado2 = pickFirstValue(order, ORDER_FIELD_KEYS.estado2);
   let estado3 = pickFirstValue(order, ORDER_FIELD_KEYS.estado3);
   if (estado3 && estado2 && estado3 === estado2){
@@ -2257,32 +2094,27 @@ function buildOrderExportRow(order, zoneInfo){
     }
   }
 
-  const macFromFields = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
-  const deviceInfo = collectDeviceIdentifiers(order, meta, macFromFields);
-
-  let mac = macFromFields || '';
-  if (!mac) {
-    mac = deviceInfo.firstMac || deviceInfo.firstSerial || '';
+  let mac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
+  if (!mac && Array.isArray(meta.dispositivos) && meta.dispositivos.length){
+    mac = String(meta.dispositivos[0].macAddress || meta.dispositivos[0].mac || '').trim();
   }
-
-  const macCell = deviceInfo.summary || mac || '';
 
   return {
     Fecha: fecha || '',
-    'Zona/CAC': zona || '',
-    'Docm TM': docmTm || '',
-    Tecnico: tecnico || '',
-    Telefono: telefono || '',
+    ZonaHFC: zonaHFC || '',
+    ZonaFTTH: zonaFTTH || '',
+    Territorio: territorio || '',
+    Ubicacion: ubicacion || '',
     Caso: caso || '',
-    'Numero Orden': numeroOrden || '',
-    'Numero ONU': numeroONU || '',
-    'Diagnostico Tecnico': diagnosticoTecnico || '',
+    NumeroOrden: numeroOrden || '',
+    NumeroOTuca: numeroOTuca || '',
     Diagnostico: diagnostico || '',
-    'Tipo Trabajo': tipoTrabajo || '',
-    'Estado llegada': estadoLlegada || '',
-    'Estado 2': estado2 || '',
-    'Estado 3': estado3 || '',
-    MAC: macCell
+    Tipo: tipo || '',
+    TipoTrabajo: tipoTrabajo || '',
+    Estado1: estado1 || '',
+    Estado2: estado2 || '',
+    Estado3: estado3 || '',
+    MAC: mac || ''
   };
 }
 
@@ -2453,64 +2285,6 @@ function setupEventListeners() {
   document.addEventListener('click', handleZoneFilterOutsideClick);
 }
 
-function restoreFiltersToControls(saved) {
-  if (!saved) return;
-
-  const setChecked = (id, value) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.checked = Boolean(value);
-  };
-
-  const setValueIfPresent = (id, value) => {
-    if (value === undefined || value === null || value === '') return;
-    const el = document.getElementById(id);
-    if (!el) return;
-    const valueStr = typeof value === 'string' ? value : String(value);
-    if (el.tagName === 'SELECT') {
-      const hasOption = Array.from(el.options || []).some(opt => opt.value === valueStr);
-      if (hasOption) el.value = valueStr;
-    } else {
-      el.value = valueStr;
-    }
-  };
-
-  setChecked('filterCATEC', saved.catec);
-  setChecked('filterExcludeCATEC', saved.excludeCatec);
-  setChecked('filterFTTH', saved.ftth);
-  setChecked('filterExcludeFTTH', saved.excludeFTTH);
-  setChecked('showAllStates', saved.showAllStates);
-
-  setValueIfPresent('filterNodoEstado', saved.nodoEstado);
-  setValueIfPresent('filterSistema', saved.sistema);
-  setValueIfPresent('filterAlarma', saved.alarma);
-  setValueIfPresent('ordenarPorIngreso', saved.ordenarPorIngreso);
-  setValueIfPresent('daysWindow', saved.days);
-  setValueIfPresent('quickSearch', saved.quickSearch);
-
-  Filters.catec = Boolean(saved.catec);
-  Filters.excludeCatec = Boolean(saved.excludeCatec);
-  Filters.ftth = Boolean(saved.ftth);
-  Filters.excludeFTTH = Boolean(saved.excludeFTTH);
-  Filters.showAllStates = Boolean(saved.showAllStates);
-  Filters.nodoEstado = saved.nodoEstado || '';
-  Filters.sistema = saved.sistema || '';
-  Filters.alarma = saved.alarma || '';
-  Filters.ordenarPorIngreso = saved.ordenarPorIngreso || Filters.ordenarPorIngreso;
-  Filters.days = saved.days || Filters.days;
-  Filters.equipoModelo = Array.isArray(saved.equipoModelo) ? saved.equipoModelo.slice() : [];
-  Filters.equipoMarca = saved.equipoMarca || '';
-  Filters.equipoTerritorio = saved.equipoTerritorio || '';
-  if (Array.isArray(saved.selectedZonas)) {
-    Filters.selectedZonas = saved.selectedZonas.slice();
-  }
-  if (typeof saved.quickSearch === 'string') {
-    Filters.quickSearch = saved.quickSearch;
-  }
-  Filters.cmts = saved.cmts || '';
-  Filters.territorio = saved.territorio || '';
-}
-
 async function loadFile(e, tipo) {
   const input = e.target;
   const file = input.files?.[0];
@@ -2622,12 +2396,6 @@ function populateFilters() {
   )];
   const terrSelect = document.getElementById('filterTerritorio');
   terrSelect.innerHTML = '<option value="">Todos</option>' + territorios.sort().map(t => `<option value="${t}">${t}</option>`).join('');
-  if (savedFiltersSnapshot && savedFiltersSnapshot.territorio) {
-    const option = Array.from(terrSelect.options || []).find(opt => opt.value === savedFiltersSnapshot.territorio);
-    if (option) {
-      terrSelect.value = savedFiltersSnapshot.territorio;
-    }
-  }
 
   const cmtsList = [...new Set(
     allZones
@@ -2636,31 +2404,18 @@ function populateFilters() {
   )];
   const cmtsSelect = document.getElementById('filterCMTS');
   cmtsSelect.innerHTML = '<option value="">Todos</option>' + cmtsList.sort().map(c => `<option value="${c}">${c}</option>`).join('');
-  if (savedFiltersSnapshot && savedFiltersSnapshot.cmts) {
-    const option = Array.from(cmtsSelect.options || []).find(opt => opt.value === savedFiltersSnapshot.cmts);
-    if (option) {
-      cmtsSelect.value = savedFiltersSnapshot.cmts;
-    }
-  }
 
   const zoneNames = [...new Set(
     (currentData.zonas || [])
       .map(z => z.zona)
       .filter(Boolean)
   )];
-  const zoneOptionsConfig = {};
-  if (savedFiltersSnapshot) {
-    if (Array.isArray(savedFiltersSnapshot.selectedZonas) && savedFiltersSnapshot.selectedZonas.length) {
-      zoneOptionsConfig.selected = savedFiltersSnapshot.selectedZonas;
-    }
-    if (savedFiltersSnapshot.zoneSearch) {
-      zoneOptionsConfig.search = savedFiltersSnapshot.zoneSearch;
-    }
-  }
-  initializeZoneFilterOptions(zoneNames, zoneOptionsConfig);
+  initializeZoneFilterOptions(zoneNames);
 }
 
 function applyFilters() {
+  if (!currentData) return;
+  
   const catecEl = document.getElementById('filterCATEC');
   const excludeCatecEl = document.getElementById('filterExcludeCATEC');
 
@@ -2681,10 +2436,6 @@ function applyFilters() {
   Filters.quickSearch = document.getElementById('quickSearch').value;
   Filters.ordenarPorIngreso = document.getElementById('ordenarPorIngreso').value;
   Filters.selectedZonas = Array.from(zoneFilterState.selected);
-
-  persistFilters();
-
-  if (!currentData) return;
 
   const filtered = Filters.apply(currentData.ordenes);
   
@@ -3334,40 +3085,87 @@ function exportBEFAN() {
 }
 
 function exportExcelVista(){
-  const zonas = Array.isArray(window.currentAnalyzedZones) ? window.currentAnalyzedZones : [];
-  if (!zonas.length) {
+  const hasZones = Array.isArray(window.currentAnalyzedZones) && window.currentAnalyzedZones.length;
+  const hasOrders = Array.isArray(window.lastFilteredOrders) && window.lastFilteredOrders.length;
+
+  if (!hasZones && !hasOrders) {
     toast('No hay datos para exportar');
     return;
   }
 
   const wb = XLSX.utils.book_new();
   const usedNames = new Set();
-  let zonasConDatos = 0;
-  let totalOrdenes = 0;
 
-  zonas.forEach((z, index) => {
-    const rows = buildZoneExportRows(z);
-    if (!rows || !rows.length) {
-      return;
-    }
+  if (hasZones){
+    const zonasData = window.currentAnalyzedZones.map(z => ({
+      Zona: z.zona,
+      Tipo: z.tipo,
+      Red: z.tipo === 'FTTH' ? z.zonaHFC : '',
+      CMTS: z.cmts,
+      Tiene_Alarma: z.tieneAlarma ? 'SÍ' : 'NO',
+      Alarmas_Activas: z.alarmasActivas,
+      Total_OTs: z.totalOTs,
+      Ingreso_N: z.ingresoN,
+      Ingreso_N1: z.ingresoN1,
+      Max_Dia: z.maxDia
+    }));
+    const zonasSheet = XLSX.utils.json_to_sheet(zonasData);
+    appendSheet(wb, zonasSheet, 'Zonas', usedNames);
+  }
 
-    const sheet = createWorksheetFromRows(rows, ZONE_EXPORT_HEADERS);
-    const nombreBase = z?.zona ? `Zona_${z.zona}` : `Zona_${index + 1}`;
-    const agregado = appendSheet(wb, sheet, nombreBase, usedNames);
-    if (agregado) {
-      zonasConDatos += 1;
-      totalOrdenes += rows.length;
-    }
-  });
+  if (Array.isArray(window.currentCMTSData) && window.currentCMTSData.length){
+    const cmtsData = window.currentCMTSData.map(c => ({
+      CMTS: c.cmts,
+      Zonas: c.zonas.length,
+      Total_OTs: c.totalOTs,
+      Zonas_UP: c.zonasUp,
+      Zonas_DOWN: c.zonasDown,
+      Zonas_Criticas: c.zonasCriticas
+    }));
+    const cmtsSheet = XLSX.utils.json_to_sheet(cmtsData);
+    appendSheet(wb, cmtsSheet, 'CMTS', usedNames);
+  }
 
-  if (zonasConDatos === 0) {
+  if (window.edificiosData && window.edificiosData.length){
+    const edi = window.edificiosData.map(e => ({
+      Direccion: e.direccion,
+      Zona: e.zona,
+      Territorio: e.territorio,
+      Total_OTs: e.casos.length
+    }));
+    const ediSheet = XLSX.utils.json_to_sheet(edi);
+    appendSheet(wb, ediSheet, 'Edificios', usedNames);
+  }
+
+  if (window.equiposPorZona && window.equiposPorZona.size){
+    const todos = [];
+    window.equiposPorZona.forEach((arr, zona) => {
+      arr.forEach(it => todos.push({ ...it, zona }));
+    });
+    const equiposSheet = XLSX.utils.json_to_sheet(todos);
+    appendSheet(wb, equiposSheet, 'Equipos', usedNames);
+  }
+
+  if (hasZones){
+    const detalleRows = [];
+    window.currentAnalyzedZones.forEach(z => {
+      const rows = buildZoneExportRows(z);
+      if (rows && rows.length) {
+        detalleRows.push(...rows);
+      }
+    });
+    const detalleSheet = createWorksheetFromRows(detalleRows, ZONE_EXPORT_HEADERS);
+    appendSheet(wb, detalleSheet, 'Detalle_Zonas', usedNames);
+  }
+
+  if (!wb.SheetNames || wb.SheetNames.length === 0){
     toast('No hay datos para exportar');
     return;
   }
 
   const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `Vista_Filtrada_${fecha}.xlsx`);
-  toast(`✓ Vista exportada (${zonasConDatos} zonas, ${totalOrdenes} órdenes)`);
+  toast('✓ Vista detallada exportada');
 }
 
 function exportExcelZonasCrudo(){
