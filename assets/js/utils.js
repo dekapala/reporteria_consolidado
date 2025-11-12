@@ -114,41 +114,113 @@ console.log('🚀 Panel v5.0 COMPLETO - Sparklines normalizadas + histórico del
       return queries.some(q => normalized.includes(this.normalize(q)));
     },
     parseDispositivosJSON(jsonStr) {
-      try {
-        if (!jsonStr) return [];
-        try {
-          const parsed = JSON.parse(jsonStr);
-          const arr = parsed?.openResp || parsed?.open_response || parsed?.data || [];
-          if (Array.isArray(arr)) {
-            return arr.map(d => ({
-              category: d.category || '',
-              description: d.description || '',
-              model: d.model || '',
-              serialNumber: d.serialNumber || d.serial || '',
-              macAddress: d.macAddress || d.mac || '',
-              type: d.type || ''
-            }));
-          }
-        } catch {
-          // fallback handled below
-        }
-        const get = (f) => {
-          const re = new RegExp(`"${f}"\\s*:\\s*"([^"]*)"`, 'i');
-          const m = String(jsonStr).match(re);
-          return m ? m[1] : '';
+      if (!jsonStr) return [];
+
+      const resultados = [];
+      const firmas = new Set();
+
+      const normalizarClave = (clave) => stripAccents(String(clave || '')).toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normalizarValor = (valor) => {
+        if (valor === null || valor === undefined) return '';
+        return String(valor).trim();
+      };
+
+      const agregar = (entrada = {}) => {
+        const limpio = {
+          category: normalizarValor(entrada.category),
+          description: normalizarValor(entrada.description),
+          model: normalizarValor(entrada.model),
+          serialNumber: normalizarValor(entrada.serialNumber),
+          macAddress: normalizarValor(entrada.macAddress),
+          type: normalizarValor(entrada.type)
         };
-        if (/macAddress|serialNumber|model|category|description/i.test(jsonStr)){
-          return [{
-            category: get('category'),
-            description: get('description'),
-            model: get('model'),
-            serialNumber: get('serialNumber'),
-            macAddress: get('macAddress'),
-            type: get('type')
-          }];
+
+        const tieneDatosClave = limpio.macAddress || limpio.serialNumber || limpio.model || limpio.description;
+        if (!tieneDatosClave) return;
+
+        const firma = `${limpio.macAddress}||${limpio.serialNumber}||${limpio.model}||${limpio.description}`;
+        if (firmas.has(firma)) return;
+        firmas.add(firma);
+        resultados.push(limpio);
+      };
+
+      const obtenerDesdeObjeto = (obj) => {
+        if (!obj || typeof obj !== 'object') return;
+
+        const mapa = {};
+        Object.keys(obj).forEach(key => {
+          mapa[normalizarClave(key)] = obj[key];
+        });
+
+        const obtener = (...variantes) => {
+          for (const variante of variantes) {
+            const clave = normalizarClave(variante);
+            if (Object.prototype.hasOwnProperty.call(mapa, clave)) {
+              const valor = normalizarValor(mapa[clave]);
+              if (valor) return valor;
+            }
+          }
+          return '';
+        };
+
+        const entrada = {
+          category: obtener('category', 'categoria'),
+          description: obtener('description', 'descripcion', 'detalle'),
+          model: obtener('model', 'modelo'),
+          serialNumber: obtener('serialnumber', 'serial', 'serie', 'numerodeserie', 'nroserie', 'sn', 'serialid'),
+          macAddress: obtener('macaddress', 'mac', 'macaddr', 'direccionmac', 'direccionmacaddress', 'macid', 'deviceid'),
+          type: obtener('type', 'tipo')
+        };
+
+        agregar(entrada);
+      };
+
+      const recorrer = (valor) => {
+        if (!valor) return;
+        if (Array.isArray(valor)) {
+          valor.forEach(recorrer);
+          return;
         }
-      } catch {}
-      return [];
+        if (typeof valor === 'object') {
+          obtenerDesdeObjeto(valor);
+          Object.values(valor).forEach(recorrer);
+        }
+      };
+
+      try {
+        const parsed = JSON.parse(jsonStr);
+        recorrer(parsed);
+      } catch (err) {
+        // Ignorado, se usará la extracción mediante expresiones regulares
+      }
+
+      if (!resultados.length) {
+        const texto = String(jsonStr);
+
+        const macRegex = /(?:^|[\s,;\|])(?:mac|mac address|direcci[oó]n\s*mac|mac\s*id)\s*[:=\-]?\s*([0-9a-f]{2}(?:[:\-]?[0-9a-f]{2}){5,})/gi;
+        const serialRegex = /(?:^|[\s,;\|])(?:sn|serial|serie|nro\s*serie|numero\s*serie|n[uú]mero\s*serie)\s*[:=\-]?\s*([a-z0-9\-]{4,})/gi;
+
+        let match;
+        const macs = new Set();
+        while ((match = macRegex.exec(texto))) {
+          const mac = match[1]?.replace(/[^0-9a-f:]/gi, '').toUpperCase();
+          if (mac && !macs.has(mac)) {
+            macs.add(mac);
+            agregar({macAddress: mac});
+          }
+        }
+
+        const seriales = new Set();
+        while ((match = serialRegex.exec(texto))) {
+          const serial = normalizarValor(match[1]);
+          if (serial && !seriales.has(serial)) {
+            seriales.add(serial);
+            agregar({serialNumber: serial});
+          }
+        }
+      }
+
+      return resultados;
     },
     detectarSistema(numCaso) {
       const numStr = String(numCaso || '').trim();
