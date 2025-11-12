@@ -2059,6 +2059,69 @@ function pickFirstValue(obj, keys){
   return '';
 }
 
+function collectDeviceIdentifiers(order, meta, fallbackMac){
+  const summaryList = [];
+  const seenSummaries = new Set();
+  const macs = [];
+  const serials = [];
+
+  const pushEntry = (macValue, serialValue) => {
+    const mac = macValue == null ? '' : String(macValue).trim();
+    const serial = serialValue == null ? '' : String(serialValue).trim();
+    if (!mac && !serial) return;
+
+    const normalizedMac = mac ? mac.toUpperCase() : '';
+    if (normalizedMac && !macs.includes(normalizedMac)) {
+      macs.push(normalizedMac);
+    }
+
+    if (serial && !serials.includes(serial)) {
+      serials.push(serial);
+    }
+
+    const parts = [];
+    if (normalizedMac) parts.push(normalizedMac);
+    if (serial) parts.push(`SN:${serial}`);
+    const summary = parts.join(' / ');
+    if (summary && !seenSummaries.has(summary)) {
+      summaryList.push(summary);
+      seenSummaries.add(summary);
+    }
+  };
+
+  if (meta && Array.isArray(meta.dispositivos)) {
+    meta.dispositivos.forEach(d => {
+      if (!d) return;
+      const macVal = d.macAddress || d.mac;
+      const serialVal = d.serialNumber || d.serial;
+      pushEntry(macVal, serialVal);
+    });
+  }
+
+  if (fallbackMac) {
+    pushEntry(fallbackMac, '');
+  }
+
+  Object.entries(order || {}).forEach(([key, value]) => {
+    if (value == null) return;
+    const normalizedKey = stripAccents(String(key).toLowerCase());
+    if (!normalizedKey) return;
+    if (normalizedKey.includes('mac') && typeof value === 'string') {
+      pushEntry(value, '');
+      return;
+    }
+    if (normalizedKey.includes('serie') || normalizedKey.includes('serial')) {
+      pushEntry('', value);
+    }
+  });
+
+  return {
+    summary: summaryList.join('\n'),
+    firstMac: macs[0] || '',
+    firstSerial: serials[0] || ''
+  };
+}
+
 function buildOrderExportRow(order, zoneInfo){
   if (!order) return null;
   const meta = order.__meta || {};
@@ -2092,10 +2155,15 @@ function buildOrderExportRow(order, zoneInfo){
     }
   }
 
-  let mac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
-  if (!mac && Array.isArray(meta.dispositivos) && meta.dispositivos.length){
-    mac = String(meta.dispositivos[0].macAddress || meta.dispositivos[0].mac || '').trim();
+  const macFromFields = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
+  const deviceInfo = collectDeviceIdentifiers(order, meta, macFromFields);
+
+  let mac = macFromFields || '';
+  if (!mac) {
+    mac = deviceInfo.firstMac || deviceInfo.firstSerial || '';
   }
+
+  const macCell = deviceInfo.summary || mac || '';
 
   return {
     Fecha: fecha || '',
@@ -2112,7 +2180,7 @@ function buildOrderExportRow(order, zoneInfo){
     'Estado llegada': estadoLlegada || '',
     'Estado 2': estado2 || '',
     'Estado 3': estado3 || '',
-    MAC: mac || ''
+    MAC: macCell
   };
 }
 
