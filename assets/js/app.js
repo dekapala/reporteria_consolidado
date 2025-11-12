@@ -1,6 +1,6 @@
 console.log('🚀 Panel v5.0 COMPLETO - Territorios Críticos + Filtros Equipos + Stats Clickeables');
 
-const CONFIG = { 
+const CONFIG = {
   codigo_befan: 'FR461',
   defaultDays: 3,
   estadosPermitidos: [
@@ -31,6 +31,15 @@ const FMS_TIPOS = {
   'NAP': 'NAP'
 };
 
+const DIAGNOSTICO_TECNICO_KEYS = [
+  'Diagnostico Tecnico',
+  'Diagnóstico Técnico',
+  'Diagnostico tecnico',
+  'Diagnóstico tecnico',
+  'Diagnostico técnico',
+  'Diagnóstico Técnico '
+];
+
 const TerritorioUtils = {
   normalizar(territorio) {
     if (!territorio) return '';
@@ -53,6 +62,24 @@ const TerritorioUtils = {
 };
 
 function stripAccents(s=''){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+
+function extractDiagnosticoTecnico(order){
+  if (!order) return '';
+  const metaValue = order.__meta?.diagnosticoTecnico;
+  if (metaValue) {
+    const str = String(metaValue).trim();
+    if (str) return str;
+  }
+  for (const key of DIAGNOSTICO_TECNICO_KEYS){
+    if (!key) continue;
+    const value = order[key];
+    if (value !== null && value !== undefined){
+      const str = String(value).trim();
+      if (str) return str;
+    }
+  }
+  return '';
+}
 
 function findDispositivosColumn(rowObj){
   const keys = Object.keys(rowObj||{});
@@ -124,41 +151,113 @@ const TextUtils = {
     return queries.some(q => normalized.includes(this.normalize(q)));
   },
   parseDispositivosJSON(jsonStr) {
-    try {
-      if (!jsonStr) return [];
-      try {
-        const parsed = JSON.parse(jsonStr);
-        const arr = parsed?.openResp || parsed?.open_response || parsed?.data || [];
-        if (Array.isArray(arr)) {
-          return arr.map(d => ({
-            category: d.category || '',
-            description: d.description || '',
-            model: d.model || '',
-            serialNumber: d.serialNumber || d.serial || '',
-            macAddress: d.macAddress || d.mac || '',
-            type: d.type || ''
-          }));
-        }
-      } catch { }
-      const get = (f) => {
-        const re = new RegExp(`"${f}"\\s*:\\s*"([^"]*)"`, 'i');
-        const m = String(jsonStr).match(re);
-        return m ? m[1] : '';
+    if (!jsonStr) return [];
+
+    const resultados = [];
+    const firmas = new Set();
+
+    const normalizarClave = (clave) => stripAccents(String(clave || '')).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normalizarValor = (valor) => {
+      if (valor === null || valor === undefined) return '';
+      return String(valor).trim();
+    };
+
+    const agregar = (entrada = {}) => {
+      const limpio = {
+        category: normalizarValor(entrada.category),
+        description: normalizarValor(entrada.description),
+        model: normalizarValor(entrada.model),
+        serialNumber: normalizarValor(entrada.serialNumber),
+        macAddress: normalizarValor(entrada.macAddress),
+        type: normalizarValor(entrada.type)
       };
 
-        
-      if (/macAddress|serialNumber|model|category|description/i.test(jsonStr)){
-        return [{
-          category: get('category'),
-          description: get('description'),
-          model: get('model'),
-          serialNumber: get('serialNumber'),
-          macAddress: get('macAddress'),
-          type: get('type')
-        }];
+      const tieneDatosClave = limpio.macAddress || limpio.serialNumber || limpio.model || limpio.description;
+      if (!tieneDatosClave) return;
+
+      const firma = `${limpio.macAddress}||${limpio.serialNumber}||${limpio.model}||${limpio.description}`;
+      if (firmas.has(firma)) return;
+      firmas.add(firma);
+      resultados.push(limpio);
+    };
+
+    const obtenerDesdeObjeto = (obj) => {
+      if (!obj || typeof obj !== 'object') return;
+
+      const mapa = {};
+      Object.keys(obj).forEach(key => {
+        mapa[normalizarClave(key)] = obj[key];
+      });
+
+      const obtener = (...variantes) => {
+        for (const variante of variantes) {
+          const clave = normalizarClave(variante);
+          if (Object.prototype.hasOwnProperty.call(mapa, clave)) {
+            const valor = normalizarValor(mapa[clave]);
+            if (valor) return valor;
+          }
+        }
+        return '';
+      };
+
+      const entrada = {
+        category: obtener('category', 'categoria'),
+        description: obtener('description', 'descripcion', 'detalle'),
+        model: obtener('model', 'modelo'),
+        serialNumber: obtener('serialnumber', 'serial', 'serie', 'numerodeserie', 'nroserie', 'sn', 'serialid'),
+        macAddress: obtener('macaddress', 'mac', 'macaddr', 'direccionmac', 'direccionmacaddress', 'macid', 'deviceid'),
+        type: obtener('type', 'tipo')
+      };
+
+      agregar(entrada);
+    };
+
+    const recorrer = (valor) => {
+      if (!valor) return;
+      if (Array.isArray(valor)) {
+        valor.forEach(recorrer);
+        return;
       }
-    } catch {}
-    return [];
+      if (typeof valor === 'object') {
+        obtenerDesdeObjeto(valor);
+        Object.values(valor).forEach(recorrer);
+      }
+    };
+
+    try {
+      const parsed = JSON.parse(jsonStr);
+      recorrer(parsed);
+    } catch (err) {
+      // Ignorado: se buscará mediante expresiones regulares
+    }
+
+    if (!resultados.length) {
+      const texto = String(jsonStr);
+
+      const macRegex = /(?:^|[\s,;\|])(?:mac|mac address|direcci[oó]n\s*mac|mac\s*id)\s*[:=\-]?\s*([0-9a-f]{2}(?:[:\-]?[0-9a-f]{2}){5,})/gi;
+      const serialRegex = /(?:^|[\s,;\|])(?:sn|serial|serie|nro\s*serie|numero\s*serie|n[uú]mero\s*serie)\s*[:=\-]?\s*([a-z0-9\-]{4,})/gi;
+
+      let match;
+      const macs = new Set();
+      while ((match = macRegex.exec(texto))) {
+        const mac = match[1]?.replace(/[^0-9a-f:]/gi, '').toUpperCase();
+        if (mac && !macs.has(mac)) {
+          macs.add(mac);
+          agregar({macAddress: mac});
+        }
+      }
+
+      const seriales = new Set();
+      while ((match = serialRegex.exec(texto))) {
+        const serial = normalizarValor(match[1]);
+        if (serial && !seriales.has(serial)) {
+          seriales.add(serial);
+          agregar({serialNumber: serial});
+        }
+      }
+    }
+
+    return resultados;
   },
   detectarSistema(numCaso) {
     const numStr = String(numCaso || '').trim();
@@ -181,23 +280,40 @@ function toast(msg) {
   setTimeout(() => t.remove(), 4000);
 }
 
+function escapeHtml(str){
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function toggleUtilities() {
   const menu = document.getElementById('utilitiesMenu');
+  if (!menu) return;
   menu.classList.toggle('show');
 }
 
 document.addEventListener('click', (e) => {
   const dropdown = document.querySelector('.utilities-dropdown');
   const menu = document.getElementById('utilitiesMenu');
-  if (dropdown && !dropdown.contains(e.target)) {
+  if (dropdown && !dropdown.contains(e.target) && menu) {
     menu.classList.remove('show');
   }
 });
 
 function openPlanillasNewTab() {
-  document.getElementById('utilitiesMenu').classList.remove('show');
-  
+  const utilitiesMenu = document.getElementById('utilitiesMenu');
+  if (utilitiesMenu) {
+    utilitiesMenu.classList.remove('show');
+  }
+
   const newWindow = window.open('', '_blank', 'width=1000,height=800');
+  if (!newWindow) {
+    toast('🔒 Habilitá las ventanas emergentes para abrir las herramientas de Planillas.');
+    return;
+  }
   
   const planillasHTML = `<!DOCTYPE html>
 <html lang="es">
@@ -316,6 +432,220 @@ Generado desde Panel Fulfillment v5.0\`;
   newWindow.document.close();
 }
 
+function openUsefulLinks() {
+  const utilitiesMenu = document.getElementById('utilitiesMenu');
+  if (utilitiesMenu) {
+    utilitiesMenu.classList.remove('show');
+  }
+
+  const win = window.open('', '_blank', 'width=1200,height=860,scrollbars=yes');
+  if (!win) {
+    toast('🔒 Habilitá las ventanas emergentes para ver los links útiles.');
+    return;
+  }
+
+  const baseHref = new URL('.', window.location.href).href;
+  const sections = [
+    {
+      title: 'Panel Fulfillment',
+      description: 'Accesos clave al entorno de análisis y soporte del equipo.',
+      links: [
+        { label: 'Analisis', url: 'http://10.120.52.24/analisis/', note: 'Panel principal de gestión' },
+        { label: 'planillas', url: 'http://10.120.52.24/pagmdr/', note: 'Plantillas de carga diaria' },
+        { label: 'Herramientas', url: 'http://10.120.52.24/analisis/herramientas_internas/', note: 'Utilidades internas' }
+      ]
+    },
+    {
+      title: 'Gestión & Monitoreo',
+      description: 'Aplicaciones operativas para seguimiento y control.',
+      links: [
+        { label: 'ICD', url: 'https://teco.sccd.ibmserviceengage.com/maximo_ICD/ui/login', note: 'Incidentes y órdenes' },
+        { label: 'ftth 1', url: 'http://10.9.44.132/symphonica/v2_10/#/', note: 'Symphonica FTTH' },
+        { label: 'CCIP', url: 'https://ccip/index.php/login', note: 'Capa de Control IP' },
+        { label: 'iTracker', url: 'https://itracker.telecom.com.ar/?L=index&m=menu', note: 'Seguimiento tickets' },
+        { label: 'PortalNOC', url: 'https://supervision/portalNOC/login.asp', note: 'Monitoreo NOC' },
+        { label: 'UnMacMe', url: 'https://unmacme.telecom.com.ar/', note: 'Gestión MACs cablemodem' },
+        { label: 'TAU', url: 'https://tau.telecom.com.ar/#/ppf/home', note: 'Portal TAU' },
+        { label: 'ServAssure NXT', url: 'https://nxt.telecom.arg.telecom.com.ar:8443/nxt-ui/#/search', note: 'Monitoreo HFC' },
+        { label: 'FMS', url: 'http://fmbrms-prod.corp.cablevision.com.ar:8180/fms/web/#/login', note: 'Alarmas FMS' },
+        { label: 'BeFan', url: 'https://snap.telecom.com.ar/befan/index.html#/signin', note: 'Gestión BeFan' }
+      ]
+    },
+    {
+      title: 'Recursos técnicos',
+      description: 'Accesos de referencia para FTTH y bases de consulta.',
+      links: [
+        { label: 'cei ftth', url: 'http://pwxdatadb3/welcome/', note: 'Portal PWX CEI' },
+        { label: 'Gpon Status', url: 'http://10.9.44.132/gpon_status/v1_0/inventario/#', note: 'Inventario GPON' },
+        { label: 'Buscador Sector Operativo/Central', url: 'https://cablevisionfibertel.sharepoint.com/sites/FIELDSERVICE/formdec/SitePages/Buscador-por-Sector-Operativo.aspx', note: 'SharePoint Field Service' }
+      ]
+    }
+  ];
+
+  const sectionsHtml = sections.map(section => `
+    <section class="links-section">
+      <div class="links-section-header">
+        <h2>${section.title}</h2>
+        ${section.description ? `<p>${section.description}</p>` : ''}
+      </div>
+      <div class="links-grid">
+        ${section.links.map(link => `
+          <a class="link-card" href="${link.url}" target="_blank" rel="noopener">
+            <span class="link-title">${link.label}</span>
+            ${link.note ? `<span class="link-note">${link.note}</span>` : ''}
+          </a>
+        `).join('')}
+      </div>
+    </section>
+  `).join('');
+
+  win.document.write(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="${baseHref}">
+  <title>🔗 Links útiles - Panel Fulfillment</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+    .links-wrapper {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 32px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 2.25rem;
+      color: #38bdf8;
+    }
+    header p {
+      margin: 0;
+      color: #cbd5f5;
+      font-size: 0.95rem;
+      max-width: 560px;
+    }
+    .links-section {
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 18px;
+      padding: 24px 24px 28px;
+      margin-bottom: 24px;
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.55);
+    }
+    .links-section-header h2 {
+      margin: 0;
+      font-size: 1.4rem;
+      color: #f8fafc;
+    }
+    .links-section-header p {
+      margin: 6px 0 0 0;
+      color: #cbd5f5;
+      font-size: 0.95rem;
+    }
+    .links-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .link-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 14px;
+      padding: 16px;
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.18s ease, border-color 0.18s ease;
+    }
+    .link-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(56, 189, 248, 0.6);
+      box-shadow: 0 12px 25px rgba(56, 189, 248, 0.25);
+    }
+    .link-title {
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: #f8fafc;
+    }
+    .link-note {
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+    footer {
+      margin-top: 32px;
+      font-size: 0.8rem;
+      color: rgba(148, 163, 184, 0.7);
+      text-align: center;
+    }
+    @media (max-width: 640px) {
+      header h1 { font-size: 1.8rem; }
+      .links-section { padding: 20px 18px 24px; }
+      .links-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="links-wrapper">
+    <header>
+      <h1>🔗 Links útiles</h1>
+      <p>Accesos verificados en las últimas 24 horas para acelerar el soporte operativo y técnico del equipo.</p>
+    </header>
+    ${sectionsHtml}
+    <footer>Actualizado ${new Date().toLocaleDateString('es-AR')} • Panel Fulfillment v5.0</footer>
+  </div>
+</body>
+</html>`);
+  win.document.close();
+}
+
+async function readFileAsUint8Array(file){
+  if (!file) return new Uint8Array();
+
+  if (typeof file.arrayBuffer === 'function') {
+    const buffer = await file.arrayBuffer();
+    return new Uint8Array(buffer);
+  }
+
+  if (typeof FileReader === 'undefined') {
+    throw new Error('FileReader no disponible en este navegador');
+  }
+
+  return await new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          resolve(new Uint8Array(reader.result));
+        } catch (conversionError) {
+          reject(conversionError);
+        }
+      };
+      reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo'));
+      reader.readAsArrayBuffer(file);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 class DataProcessor {
   constructor() {
     this.consolidado1 = null;
@@ -329,55 +659,63 @@ class DataProcessor {
   
   async loadExcel(file, tipo) {
     try {
-      const data = new Uint8Array(await file.arrayBuffer());
-      
-      const wb = XLSX.read(data, {
-        type: 'array',
-        cellDates: false,
-        cellText: false,
-        cellFormula: false,
-        raw: false
-      });
-      
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const range = XLSX.utils.decode_range(ws['!ref']);
-      
-      let headerRow = 0;
-      for (let R = 0; R <= 20; R++) {
-        let hasContent = false;
-        for (let C = 0; C <= 15; C++) {
-          const cellAddr = XLSX.utils.encode_cell({r: R, c: C});
-          const cell = ws[cellAddr];
-          if (cell && cell.v) {
-            const cellValue = String(cell.v).toLowerCase();
-            if (cellValue.includes('zona') && cellValue.includes('tecnica')) {
-              headerRow = R;
-              console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
-              hasContent = true;
-              break;
-            }
-            if (cellValue.includes('numero') && (cellValue.includes('caso') || cellValue.includes('cuenta'))) {
-              headerRow = R;
-              console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
-              hasContent = true;
-              break;
+      const data = await readFileAsUint8Array(file);
+      let jsonData = [];
+
+      if (typeof XLSX !== 'undefined' && XLSX && typeof XLSX.read === 'function') {
+        const wb = XLSX.read(data, {
+          type: 'array',
+          cellDates: false,
+          cellText: false,
+          cellFormula: false,
+          raw: false
+        });
+
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const range = XLSX.utils.decode_range(ws['!ref']);
+
+        let headerRow = 0;
+        for (let R = 0; R <= 20; R++) {
+          let hasContent = false;
+          for (let C = 0; C <= 15; C++) {
+            const cellAddr = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = ws[cellAddr];
+            if (cell && cell.v) {
+              const cellValue = String(cell.v).toLowerCase();
+              if (cellValue.includes('zona') && cellValue.includes('tecnica')) {
+                headerRow = R;
+                console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
+                hasContent = true;
+                break;
+              }
+              if (cellValue.includes('numero') && (cellValue.includes('caso') || cellValue.includes('cuenta'))) {
+                headerRow = R;
+                console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
+                hasContent = true;
+                break;
+              }
             }
           }
+          if (hasContent) break;
         }
-        if (hasContent) break;
+
+        console.log(`📋 Usando fila ${headerRow + 1} como headers`);
+
+        range.s.r = headerRow;
+        ws['!ref'] = XLSX.utils.encode_range(range);
+
+        jsonData = XLSX.utils.sheet_to_json(ws, {
+          defval: '',
+          raw: false,
+          dateNF: 'dd/mm/yyyy'
+        });
+      } else if (window.ExcelLite && typeof window.ExcelLite.parse === 'function') {
+        jsonData = await window.ExcelLite.parse(data);
+        console.log(`✅ Archivo tipo ${tipo} leído con ExcelLite: ${jsonData.length} registros`);
+      } else {
+        throw new Error('No se encontró un lector de Excel disponible (XLSX o ExcelLite)');
       }
-      
-      console.log(`📋 Usando fila ${headerRow + 1} como headers`);
-      
-      range.s.r = headerRow;
-      ws['!ref'] = XLSX.utils.encode_range(range);
-      
-      const jsonData = XLSX.utils.sheet_to_json(ws, { 
-        defval: '', 
-        raw: false, 
-        dateNF: 'dd/mm/yyyy' 
-      });
-      
+
       console.log(`✅ Archivo tipo ${tipo}: ${jsonData.length} registros`);
       
       if (tipo === 1) this.consolidado1 = jsonData;
@@ -624,7 +962,7 @@ class DataProcessor {
             ordenesPerDay.get(dk).push(o);
           }
 
-          const diag = o['Diagnostico Tecnico'] || o['Diagnóstico Técnico'] || '';
+          const diag = extractDiagnosticoTecnico(o);
           if (diag) diagnosticos.add(diag);
         }
       });
@@ -777,8 +1115,64 @@ class DataProcessor {
 
 const dataProcessor = new DataProcessor();
 
+const zoneFilterState = {
+  allOptions: [],
+  filteredOptions: [],
+  selected: new Set(),
+  search: '',
+  open: false
+};
+
+const FILTER_STORAGE_KEY = 'reporteria.consolidado.filters.v1';
+
+const filterStorage = (() => {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const testKey = '__filters_test__';
+      window.localStorage.setItem(testKey, 'ok');
+      window.localStorage.removeItem(testKey);
+      return window.localStorage;
+    }
+  } catch (err) {
+    console.warn('Storage no disponible para filtros persistentes', err);
+  }
+  return null;
+})();
+
+const FilterPersistence = {
+  load() {
+    if (!filterStorage) return null;
+    try {
+      const raw = filterStorage.getItem(FILTER_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (err) {
+      console.warn('No se pudieron cargar los filtros guardados', err);
+      return null;
+    }
+  },
+  save(state) {
+    if (!filterStorage) return;
+    try {
+      filterStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
+    } catch (err) {
+      console.warn('No se pudieron guardar los filtros', err);
+    }
+  },
+  clear() {
+    if (!filterStorage) return;
+    try {
+      filterStorage.removeItem(FILTER_STORAGE_KEY);
+    } catch {}
+  }
+};
+
+let savedFiltersSnapshot = null;
+
 const Filters = {
   catec: false,
+  excludeCatec: false,
   ftth: false,
   excludeFTTH: false,
   nodoEstado: '',
@@ -794,6 +1188,7 @@ const Filters = {
   equipoMarca: '',
   equipoTerritorio: '',
   criticidad: '',
+  selectedZonas: [],
   
   apply(rows) {
     let filtered = rows.slice();
@@ -809,7 +1204,7 @@ const Filters = {
       return daysAgo <= this.days;
     });
     
-   if (!this.showAllStates) {
+    if (!this.showAllStates) {
       const estadosOcultosNorm = (CONFIG.estadosOcultosPorDefecto || []).map(normalizeEstado);
       const estadosPermitidosNorm = (CONFIG.estadosPermitidos || []).map(normalizeEstado);
 
@@ -828,10 +1223,22 @@ const Filters = {
       });
     }
     
-    if (this.catec) {
+    const catecActive = this.catec;
+    const excludeCatecActive = !catecActive && this.excludeCatec;
+
+    if (catecActive) {
       filtered = filtered.filter(r => {
         const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
-        return tipo.toUpperCase().includes('CATEC');
+        const upperTipo = String(tipo).toUpperCase();
+        return upperTipo.includes('CATEC');
+      });
+    }
+
+    if (excludeCatecActive) {
+      filtered = filtered.filter(r => {
+        const tipo = r['Tipo de trabajo: Nombre de tipo de trabajo'] || '';
+        const upperTipo = String(tipo).toUpperCase();
+        return !upperTipo.includes('CATEC');
       });
     }
     
@@ -866,7 +1273,7 @@ const Filters = {
     
     if (this.quickSearch) {
       const queries = this.quickSearch.split(';').map(q => q.trim()).filter(Boolean);
-      
+
       filtered = filtered.filter(r => {
         const searchable = [
           r['Zona Tecnica HFC'],
@@ -884,10 +1291,19 @@ const Filters = {
         }
       });
     }
-    
+
+    if (this.selectedZonas && this.selectedZonas.length) {
+      const zonesSet = new Set(this.selectedZonas);
+
+      filtered = filtered.filter(r => {
+        const { zonaPrincipal } = dataProcessor.getZonaPrincipal(r);
+        return zonaPrincipal && zonesSet.has(zonaPrincipal);
+      });
+    }
+
     return filtered;
   },
-  
+
   applyToZones(zones) {
     let filtered = zones.slice();
 
@@ -915,7 +1331,12 @@ const Filters = {
         filtered = filtered.filter(z => !z.tieneAlarma);
       }
     }
-    
+
+    if (this.selectedZonas && this.selectedZonas.length) {
+      const zonesSet = new Set(this.selectedZonas);
+      filtered = filtered.filter(z => zonesSet.has(z.zona));
+    }
+
     if (this.ordenarPorIngreso === 'desc') {
       filtered.sort((a, b) => b.totalOTs - a.totalOTs);
     } else if (this.ordenarPorIngreso === 'asc') {
@@ -925,6 +1346,254 @@ const Filters = {
     return filtered;
   }
 };
+
+function getCurrentFiltersSnapshot() {
+  return {
+    catec: Boolean(Filters.catec),
+    excludeCatec: Boolean(Filters.excludeCatec),
+    ftth: Boolean(Filters.ftth),
+    excludeFTTH: Boolean(Filters.excludeFTTH),
+    nodoEstado: Filters.nodoEstado || '',
+    cmts: Filters.cmts || '',
+    days: Filters.days || CONFIG.defaultDays,
+    territorio: Filters.territorio || '',
+    sistema: Filters.sistema || '',
+    alarma: Filters.alarma || '',
+    quickSearch: Filters.quickSearch || '',
+    showAllStates: Boolean(Filters.showAllStates),
+    ordenarPorIngreso: Filters.ordenarPorIngreso || 'desc',
+    selectedZonas: Array.isArray(Filters.selectedZonas) ? Filters.selectedZonas.slice() : [],
+    criticidad: Filters.criticidad || '',
+    zoneSearch: zoneFilterState.search || '',
+    equipoModelo: Array.isArray(Filters.equipoModelo) ? Filters.equipoModelo.slice() : [],
+    equipoMarca: Filters.equipoMarca || '',
+    equipoTerritorio: Filters.equipoTerritorio || ''
+  };
+}
+
+function persistFilters() {
+  const snapshot = getCurrentFiltersSnapshot();
+  savedFiltersSnapshot = snapshot;
+  FilterPersistence.save(snapshot);
+}
+
+function initializeZoneFilterOptions(zones, options = {}) {
+  const unique = Array.from(new Set((zones || []).filter(Boolean)));
+  unique.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+  const preselected = Array.isArray(options.selected) ? options.selected : [];
+  const searchTerm = typeof options.search === 'string' ? options.search : '';
+  const validOptions = new Set(unique);
+
+  zoneFilterState.allOptions = unique;
+  zoneFilterState.selected = new Set(preselected.filter(z => validOptions.has(z)));
+  zoneFilterState.search = searchTerm;
+
+  const searchInput = document.getElementById('zoneFilterSearch');
+  if (searchInput) searchInput.value = searchTerm;
+
+  if (searchTerm) {
+    const normalizedTerm = TextUtils.normalize(searchTerm);
+    zoneFilterState.filteredOptions = unique.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
+  } else {
+    zoneFilterState.filteredOptions = unique.slice();
+  }
+
+  renderZoneFilterOptions();
+  updateZoneFilterSummary();
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+}
+
+function renderZoneFilterOptions() {
+  const container = document.getElementById('zoneFilterOptions');
+  if (!container) return;
+
+  if (!zoneFilterState.allOptions.length) {
+    container.innerHTML = '<div class="zone-multiselect__empty">Cargá los reportes para habilitar el filtro por zonas</div>';
+    return;
+  }
+
+  if (!zoneFilterState.filteredOptions.length) {
+    container.innerHTML = '<div class="zone-multiselect__empty">No hay coincidencias para la búsqueda actual</div>';
+    return;
+  }
+
+  const optionsHtml = zoneFilterState.filteredOptions.map(z => {
+    const checked = zoneFilterState.selected.has(z) ? 'checked' : '';
+    return `<label class="zone-option"><input type="checkbox" value="${z}" ${checked}> <span>${z}</span></label>`;
+  }).join('');
+
+  container.innerHTML = optionsHtml;
+}
+
+function updateZoneFilterSummary() {
+  const summaryEl = document.getElementById('zoneFilterSummary');
+  const trigger = document.getElementById('zoneFilterTrigger');
+  if (!summaryEl) return;
+
+  const hasOptions = zoneFilterState.allOptions.length > 0;
+  if (trigger) trigger.disabled = !hasOptions;
+
+  if (!hasOptions) {
+    summaryEl.textContent = 'Sin datos (carga reportes)';
+    summaryEl.title = 'Carga los reportes para habilitar el filtro por zonas';
+    return;
+  }
+
+  const count = zoneFilterState.selected.size;
+
+  if (count === 0) {
+    summaryEl.textContent = 'Todas las zonas';
+    summaryEl.title = 'Mostrar todas las zonas disponibles';
+  } else if (count === 1) {
+    const [only] = Array.from(zoneFilterState.selected);
+    summaryEl.textContent = only;
+    summaryEl.title = only;
+  } else {
+    summaryEl.textContent = `${count} zonas seleccionadas`;
+    const listPreview = Array.from(zoneFilterState.selected).slice(0, 8).join(', ');
+    summaryEl.title = listPreview;
+  }
+}
+
+function toggleZoneFilter(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const container = document.getElementById('zoneFilter');
+  if (!container) return;
+
+  const willOpen = !container.classList.contains('open');
+  if (willOpen) {
+    container.classList.add('open');
+    zoneFilterState.open = true;
+    renderZoneFilterOptions();
+
+    setTimeout(() => {
+      const searchInput = document.getElementById('zoneFilterSearch');
+      if (searchInput) {
+        searchInput.focus();
+        if (zoneFilterState.search) {
+          const pos = zoneFilterState.search.length;
+          searchInput.setSelectionRange(pos, pos);
+        }
+      }
+    }, 0);
+  } else {
+    closeZoneFilter();
+  }
+}
+
+function closeZoneFilter() {
+  const container = document.getElementById('zoneFilter');
+  if (!container) return;
+  container.classList.remove('open');
+  zoneFilterState.open = false;
+}
+
+function handleZoneFilterOutsideClick(event) {
+  const container = document.getElementById('zoneFilter');
+  if (!container) return;
+  if (!container.contains(event.target)) {
+    closeZoneFilter();
+  }
+}
+
+function onZoneFilterSearch(event) {
+  const value = event.target.value || '';
+  zoneFilterState.search = value;
+
+  if (!zoneFilterState.allOptions.length) {
+    renderZoneFilterOptions();
+    return;
+  }
+
+  const normalizedTerm = TextUtils.normalize(value);
+  if (!normalizedTerm) {
+    zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+  } else {
+    zoneFilterState.filteredOptions = zoneFilterState.allOptions.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
+  }
+
+  renderZoneFilterOptions();
+}
+
+function onZoneOptionChange(event) {
+  const target = event.target;
+  if (!target || target.type !== 'checkbox') return;
+
+  const zone = target.value;
+  if (!zone) return;
+
+  if (target.checked) {
+    zoneFilterState.selected.add(zone);
+  } else {
+    zoneFilterState.selected.delete(zone);
+  }
+
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+  updateZoneFilterSummary();
+  applyFilters();
+}
+
+function selectAllZones(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  if (!zoneFilterState.allOptions.length) return;
+
+  const hasSearch = Boolean(zoneFilterState.search);
+  const source = hasSearch ? zoneFilterState.filteredOptions : zoneFilterState.allOptions;
+  if (!source.length) return;
+
+  source.forEach(z => zoneFilterState.selected.add(z));
+
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+  renderZoneFilterOptions();
+  updateZoneFilterSummary();
+  applyFilters();
+}
+
+function resetZoneFilterState(options = {}) {
+  const { apply = false, keepSearch = false } = options;
+
+  zoneFilterState.selected = new Set();
+
+  if (!keepSearch) {
+    zoneFilterState.search = '';
+    zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+    const searchInput = document.getElementById('zoneFilterSearch');
+    if (searchInput) searchInput.value = '';
+  } else {
+    const normalizedTerm = TextUtils.normalize(zoneFilterState.search);
+    if (!normalizedTerm) {
+      zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+    } else {
+      zoneFilterState.filteredOptions = zoneFilterState.allOptions.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
+    }
+  }
+
+  renderZoneFilterOptions();
+  updateZoneFilterSummary();
+  Filters.selectedZonas = [];
+
+  if (apply) {
+    applyFilters();
+  }
+}
+
+function clearZoneSelection(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  resetZoneFilterState({ apply: true, keepSearch: true });
+}
 
 const UIRenderer = {
   renderStats(data) {
@@ -956,23 +1625,44 @@ const UIRenderer = {
     `;
   },
   
+  normalizeCounts(counts) {
+    if (!Array.isArray(counts)) return [];
+
+    return counts.map(c => {
+      if (c === null || c === undefined) return 0;
+      if (typeof c === 'number') {
+        return Number.isFinite(c) ? c : 0;
+      }
+
+      const parsed = parseFloat(String(c).trim().replace(',', '.'));
+      return Number.isFinite(parsed) ? parsed : 0;
+    });
+  },
+
   renderSparkline(counts, labels) {
-    const max = Math.max(...counts, 1);
+    const safeCounts = this.normalizeCounts(counts);
+
+    if (!safeCounts.length) {
+      return '<div class="sparkline-placeholder">Sin datos</div>';
+    }
+
     const width = 120;
     const height = 30;
-    const barWidth = width / counts.length;
-    
+    const max = Math.max(...safeCounts, 1);
+    const barWidth = width / safeCounts.length;
+
     let svg = `<svg class="sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
-    
-    counts.forEach((count, i) => {
-      const barHeight = (count / max) * height;
+
+    safeCounts.forEach((count, i) => {
+      const normalized = max > 0 ? (count / max) : 0;
+      const barHeight = normalized * height;
       const x = i * barWidth;
       const y = height - barHeight;
       const color = count >= max * 0.7 ? '#D13438' : count >= max * 0.4 ? '#F7630C' : '#0078D4';
-      
-      svg += `<rect x="${x}" y="${y}" width="${barWidth - 2}" height="${barHeight}" fill="${color}" rx="2"/>`;
+
+      svg += `<rect x="${x}" y="${y}" width="${Math.max(barWidth - 2, 1)}" height="${barHeight}" fill="${color}" rx="2"/>`;
     });
-    
+
     svg += '</svg>';
     return svg;
   },
@@ -984,6 +1674,7 @@ const UIRenderer = {
     html += '<th>Zona</th><th>Tipo</th><th>Red</th><th>CMTS</th><th>Nodo</th>';
     html += '<th>Alarma</th><th>Gráfico 7 Días</th>';
     html += '<th class="number">Total</th><th class="number">N</th><th class="number">N-1</th>';
+    html += '<th>Diagnóstico técnico</th>';
     html += '<th>Acción</th>';
     html += '</tr></thead><tbody>';
     
@@ -1010,6 +1701,22 @@ const UIRenderer = {
       const cmtsShort = z.cmts ? z.cmts.substring(0, 15) + (z.cmts.length > 15 ? '...' : '') : '-';
       const sparkline = this.renderSparkline(z.last7DaysCounts, z.last7Days);
       
+      const diagnosticos = Array.isArray(z.diagnosticos) ? z.diagnosticos.filter(Boolean) : [];
+      let diagnosticoHtml = '<span class="diagnostico-tag diagnostico-tag--empty">Sin datos</span>';
+      if (diagnosticos.length) {
+        const chips = diagnosticos.slice(0, 3).map(d => {
+          const raw = String(d);
+          const title = escapeHtml(raw);
+          const truncated = raw.length > 80 ? `${raw.slice(0, 77)}…` : raw;
+          const label = escapeHtml(truncated);
+          return `<span class="diagnostico-tag" title="${title}">${label}</span>`;
+        }).join('');
+        const extra = diagnosticos.length > 3
+          ? `<span class="diagnostico-tag diagnostico-tag--more">+${diagnosticos.length - 3}</span>`
+          : '';
+        diagnosticoHtml = `<div class="diagnostico-tags">${chips}${extra}</div>`;
+      }
+
       html += `<tr>
         <td><strong>${z.zona}</strong></td>
         <td>${badgeTipo}</td>
@@ -1021,6 +1728,7 @@ const UIRenderer = {
         <td class="number">${z.totalOTs}</td>
         <td class="number">${z.ingresoN}</td>
         <td class="number">${z.ingresoN1}</td>
+        <td>${diagnosticoHtml}</td>
         <td>
           <div style="display:flex; gap:4px;">
             <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openModal(${idx})">👁️ Ver</button>
@@ -1278,6 +1986,7 @@ function applyEquiposFilters() {
   Filters.equipoMarca = document.getElementById('filterEquipoMarca').value;
   Filters.equipoTerritorio = document.getElementById('filterEquipoTerritorio').value;
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
+  persistFilters();
 }
 
 function clearEquiposFilters() {
@@ -1285,6 +1994,7 @@ function clearEquiposFilters() {
   Filters.equipoMarca = '';
   Filters.equipoTerritorio = '';
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
+  persistFilters();
 }
 
 function toggleEquiposGrupo(zona){
@@ -1292,6 +2002,335 @@ function toggleEquiposGrupo(zona){
   if (window.equiposOpen.has(zona)) window.equiposOpen.delete(zona);
   else window.equiposOpen.add(zona);
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
+}
+
+const ZONE_EXPORT_HEADERS = [
+  'Fecha',
+  'Zona/CAC',
+  'Docm TM',
+  'Tecnico',
+  'Telefono',
+  'Caso',
+  'Numero Orden',
+  'Numero ONU',
+  'Diagnostico Tecnico',
+  'Diagnostico',
+  'Tipo Trabajo',
+  'Estado llegada',
+  'Estado 2',
+  'Estado 3',
+  'MAC'
+];
+
+const ORDER_FIELD_KEYS = {
+  fecha: [
+    'Fecha de creación',
+    'Fecha/Hora de apertura',
+    'Fecha de inicio',
+    'Fecha'
+  ],
+  zona: [
+    'Zona Tecnica HFC',
+    'Zona Tecnica',
+    'Zona HFC',
+    'Zona'
+  ],
+  docmTm: [
+    'Docm TM',
+    'DOCM TM',
+    'DocmTM',
+    'DOCMTM',
+    'Doc TM',
+    'DOC TM',
+    'Documento TM',
+    'Documento Técnico',
+    'Documento Tecnico',
+    'Doc. TM',
+    'Doc Técnico',
+    'Doc Tecnico'
+  ],
+  tecnico: [
+    'Tecnico',
+    'Técnico',
+    'Tecnico Asignado',
+    'Técnico Asignado',
+    'Nombre Tecnico',
+    'Nombre Técnico',
+    'Tecnico Responsable',
+    'Técnico Responsable',
+    'Tecnico a cargo',
+    'Técnico a cargo'
+  ],
+  telefono: [
+    'Telefono',
+    'Teléfono',
+    'Telefono Contacto',
+    'Teléfono Contacto',
+    'Telefono de contacto',
+    'Teléfono de contacto',
+    'Numero de contacto',
+    'Número de contacto',
+    'Telefono Cliente',
+    'Teléfono Cliente'
+  ],
+  caso: [
+    'Número del caso',
+    'Numero del caso',
+    'Caso Externo',
+    'Caso externo',
+    'External Case Id',
+    'Nro Caso',
+    'Número de Caso',
+    'Numero Caso'
+  ],
+  numeroOrden: [
+    'Número de cita',
+    'Numero de cita',
+    'Número de Orden',
+    'Numero de Orden',
+    'Número Orden',
+    'Numero Orden',
+    'Orden',
+    'Orden de trabajo',
+    'N° Orden',
+    'Nro Orden',
+    'Número de orden de trabajo',
+    'Numero de orden de trabajo',
+    'N° OT'
+  ],
+  numeroONU: [
+    'Número ONU',
+    'Numero ONU',
+    'Numero ONU Sivel',
+    'Número ONU Sivel',
+    'Numero ONU Cliente',
+    'Número ONU Cliente',
+    'NumeroONU',
+    'ONU Numero',
+    'Numero ONU SISE',
+    'Número ONU SISE'
+  ],
+  diagnosticoTecnico: DIAGNOSTICO_TECNICO_KEYS,
+  diagnostico: [
+    'Diagnostico',
+    'Diagnóstico',
+    'Diagnostico Cliente',
+    'Diagnóstico Cliente',
+    'Diagnostico del cliente',
+    'Diagnóstico del cliente'
+  ],
+  tipoTrabajo: [
+    'Tipo de trabajo: Nombre de tipo de trabajo',
+    'Tipo de trabajo',
+    'Tipo Trabajo',
+    'TipoTrabajo'
+  ],
+  estadoLlegada: [
+    'Estado llegada',
+    'Estado Llegada',
+    'Estado llegada técnico',
+    'Estado llegada Tecnico',
+    'Estado de llegada',
+    'Estado Llegada Técnico'
+  ],
+  estado2: [
+    'Estado.2',
+    'Estado final',
+    'Estado actual'
+  ],
+  estado3: [
+    'Estado.3',
+    'Estado final',
+    'Estado detalle',
+    'Estado gestion',
+    'Estado gestión',
+    'Estado Gestión'
+  ],
+  mac: [
+    'MAC',
+    'Mac',
+    'Mac Address',
+    'Dirección MAC',
+    'Direccion MAC',
+    'MAC Address'
+  ]
+};
+
+function pickFirstValue(obj, keys){
+  if (!obj || !keys) return '';
+  for (const key of keys){
+    if (!key) continue;
+    const value = obj[key];
+    if (value !== null && value !== undefined){
+      const str = String(value).trim();
+      if (str) return str;
+    }
+  }
+  return '';
+}
+
+function collectDeviceIdentifiers(order, meta, fallbackMac){
+  const summaryList = [];
+  const seenSummaries = new Set();
+  const macs = [];
+  const serials = [];
+
+  const pushEntry = (macValue, serialValue) => {
+    const mac = macValue == null ? '' : String(macValue).trim();
+    const serial = serialValue == null ? '' : String(serialValue).trim();
+    if (!mac && !serial) return;
+
+    const normalizedMac = mac ? mac.toUpperCase() : '';
+    if (normalizedMac && !macs.includes(normalizedMac)) {
+      macs.push(normalizedMac);
+    }
+
+    if (serial && !serials.includes(serial)) {
+      serials.push(serial);
+    }
+
+    const parts = [];
+    if (normalizedMac) parts.push(normalizedMac);
+    if (serial) parts.push(`SN:${serial}`);
+    const summary = parts.join(' / ');
+    if (summary && !seenSummaries.has(summary)) {
+      summaryList.push(summary);
+      seenSummaries.add(summary);
+    }
+  };
+
+  if (meta && Array.isArray(meta.dispositivos)) {
+    meta.dispositivos.forEach(d => {
+      if (!d) return;
+      const macVal = d.macAddress || d.mac;
+      const serialVal = d.serialNumber || d.serial;
+      pushEntry(macVal, serialVal);
+    });
+  }
+
+  if (fallbackMac) {
+    pushEntry(fallbackMac, '');
+  }
+
+  Object.entries(order || {}).forEach(([key, value]) => {
+    if (value == null) return;
+    const normalizedKey = stripAccents(String(key).toLowerCase());
+    if (!normalizedKey) return;
+    if (normalizedKey.includes('mac') && typeof value === 'string') {
+      pushEntry(value, '');
+      return;
+    }
+    if (normalizedKey.includes('serie') || normalizedKey.includes('serial')) {
+      pushEntry('', value);
+    }
+  });
+
+  return {
+    summary: summaryList.join('\n'),
+    firstMac: macs[0] || '',
+    firstSerial: serials[0] || ''
+  };
+}
+
+function buildOrderExportRow(order, zoneInfo){
+  if (!order) return null;
+  const meta = order.__meta || {};
+
+  let fecha = pickFirstValue(order, ORDER_FIELD_KEYS.fecha);
+  if (!fecha && meta.fecha){
+    fecha = DateUtils.format(meta.fecha);
+  }
+
+  const zona = meta.zonaHFC || zoneInfo?.zona || pickFirstValue(order, ORDER_FIELD_KEYS.zona) || '';
+  const docmTm = pickFirstValue(order, ORDER_FIELD_KEYS.docmTm);
+  const tecnico = meta.tecnico || pickFirstValue(order, ORDER_FIELD_KEYS.tecnico);
+  const telefono = pickFirstValue(order, ORDER_FIELD_KEYS.telefono);
+  const caso = meta.numeroCaso || pickFirstValue(order, ORDER_FIELD_KEYS.caso);
+  const numeroOrden = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOrden);
+  const numeroONU = pickFirstValue(order, ORDER_FIELD_KEYS.numeroONU);
+  const diagnosticoTecnico = meta.diagnosticoTecnico || pickFirstValue(order, ORDER_FIELD_KEYS.diagnosticoTecnico);
+  let diagnostico = meta.diagnostico || pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
+  if (!diagnostico && diagnosticoTecnico) {
+    diagnostico = diagnosticoTecnico;
+  }
+  const tipoTrabajo = pickFirstValue(order, ORDER_FIELD_KEYS.tipoTrabajo);
+  const estadoLlegada = pickFirstValue(order, ORDER_FIELD_KEYS.estadoLlegada);
+  let estado2 = pickFirstValue(order, ORDER_FIELD_KEYS.estado2);
+  let estado3 = pickFirstValue(order, ORDER_FIELD_KEYS.estado3);
+  if (estado3 && estado2 && estado3 === estado2){
+    const alternativas = ['Estado final', 'Estado gestión', 'Estado Gestion', 'Estado detalle'];
+    const altern = pickFirstValue(order, alternativas);
+    if (altern && altern !== estado2){
+      estado3 = altern;
+    }
+  }
+
+  const macFromFields = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
+  const deviceInfo = collectDeviceIdentifiers(order, meta, macFromFields);
+
+  let mac = macFromFields || '';
+  if (!mac) {
+    mac = deviceInfo.firstMac || deviceInfo.firstSerial || '';
+  }
+
+  const macCell = deviceInfo.summary || mac || '';
+
+  return {
+    Fecha: fecha || '',
+    'Zona/CAC': zona || '',
+    'Docm TM': docmTm || '',
+    Tecnico: tecnico || '',
+    Telefono: telefono || '',
+    Caso: caso || '',
+    'Numero Orden': numeroOrden || '',
+    'Numero ONU': numeroONU || '',
+    'Diagnostico Tecnico': diagnosticoTecnico || '',
+    Diagnostico: diagnostico || '',
+    'Tipo Trabajo': tipoTrabajo || '',
+    'Estado llegada': estadoLlegada || '',
+    'Estado 2': estado2 || '',
+    'Estado 3': estado3 || '',
+    MAC: macCell
+  };
+}
+
+function buildZoneExportRows(zoneData){
+  if (!zoneData) return [];
+  const source = zoneData.ordenesOriginales || zoneData.ordenes || [];
+  return source
+    .map(order => buildOrderExportRow(order, zoneData))
+    .filter(row => row && ZONE_EXPORT_HEADERS.some(header => (row[header] || '').toString().trim().length));
+}
+
+function createWorksheetFromRows(rows, headers){
+  if (!rows || !rows.length) return null;
+  const data = rows.map(row => headers.map(header => row[header] || ''));
+  return XLSX.utils.aoa_to_sheet([headers, ...data]);
+}
+
+function sanitizeSheetName(name){
+  const fallback = 'Hoja';
+  if (!name) return fallback;
+  const invalidChars = /[\/?*:[\]]/g;
+  const cleaned = name.toString().replace(invalidChars, ' ').replace(/[\u0000-\u001f]/g, ' ').trim();
+  const truncated = cleaned.substring(0, 31);
+  return truncated || fallback;
+}
+
+function appendSheet(workbook, worksheet, desiredName, usedNames){
+  if (!worksheet) return false;
+  const base = sanitizeSheetName(desiredName);
+  let name = base;
+  let counter = 1;
+  while (usedNames.has(name)){
+    counter += 1;
+    const suffix = `_${counter}`;
+    const baseTrim = base.substring(0, Math.max(31 - suffix.length, 1));
+    name = `${baseTrim}${suffix}`;
+  }
+  usedNames.add(name);
+  XLSX.utils.book_append_sheet(workbook, worksheet, name);
+  return true;
 }
 
 function exportEquiposGrupoExcel(zona, useFiltered = false){
@@ -1315,15 +2354,23 @@ function exportEquiposGrupoExcel(zona, useFiltered = false){
 }
 
 function exportZonaExcel(zoneIdx) {
-  const zonaData = window.currentAnalyzedZones[zoneIdx];
+  const zonaData = window.currentAnalyzedZones?.[zoneIdx];
   if (!zonaData) return toast('No hay datos de la zona');
-  
+
+  const rows = buildZoneExportRows(zonaData);
+  if (!rows.length) {
+    toast('No hay órdenes para exportar en esta zona');
+    return;
+  }
+
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(zonaData.ordenesOriginales || zonaData.ordenes || []);
-  XLSX.utils.book_append_sheet(wb, ws, `Zona_${zonaData.zona}`);
-  
-  XLSX.writeFile(wb, `Zona_${zonaData.zona}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  toast(`✅ Exportada zona ${zonaData.zona}`);
+  const usedNames = new Set();
+  const sheet = createWorksheetFromRows(rows, ZONE_EXPORT_HEADERS);
+  appendSheet(wb, sheet, `Zona_${zonaData.zona}`, usedNames);
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `Zona_${zonaData.zona}_${fecha}.xlsx`);
+  toast(`✅ Exportada zona ${zonaData.zona} (${rows.length} órdenes)`);
 }
 
 function exportCMTSExcel(cmts) {
@@ -1354,7 +2401,9 @@ let currentZone = null;
 let selectedOrders = new Set();
 
 document.addEventListener('DOMContentLoaded', () => {
+  savedFiltersSnapshot = FilterPersistence.load();
   setupEventListeners();
+  restoreFiltersToControls(savedFiltersSnapshot);
 });
 
 function setupEventListeners() {
@@ -1363,7 +2412,24 @@ function setupEventListeners() {
   document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
   document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
   
-  document.getElementById('filterCATEC').addEventListener('change', applyFilters);
+  const filterCatec = document.getElementById('filterCATEC');
+  const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
+
+  if (filterCatec && filterExcludeCatec) {
+    filterCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterExcludeCatec.checked = false;
+      }
+      applyFilters();
+    });
+
+    filterExcludeCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterCatec.checked = false;
+      }
+      applyFilters();
+    });
+  }
   document.getElementById('showAllStates').addEventListener('change', applyFilters);
   document.getElementById('filterFTTH').addEventListener('change', e => {
     if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
@@ -1381,38 +2447,132 @@ function setupEventListeners() {
   document.getElementById('filterAlarma').addEventListener('change', applyFilters);
   document.getElementById('quickSearch').addEventListener('input', debounce(applyFilters, 300));
   document.getElementById('ordenarPorIngreso').addEventListener('change', applyFilters);
+
+  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
+  if (zoneFilterSearch) {
+    zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
+  }
+
+  const zoneFilterOptions = document.getElementById('zoneFilterOptions');
+  if (zoneFilterOptions) {
+    zoneFilterOptions.addEventListener('change', onZoneOptionChange);
+  }
+
+  document.addEventListener('click', handleZoneFilterOutsideClick);
+}
+
+function restoreFiltersToControls(saved) {
+  if (!saved) return;
+
+  const setChecked = (id, value) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.checked = Boolean(value);
+  };
+
+  const setValueIfPresent = (id, value) => {
+    if (value === undefined || value === null || value === '') return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    const valueStr = typeof value === 'string' ? value : String(value);
+    if (el.tagName === 'SELECT') {
+      const hasOption = Array.from(el.options || []).some(opt => opt.value === valueStr);
+      if (hasOption) el.value = valueStr;
+    } else {
+      el.value = valueStr;
+    }
+  };
+
+  setChecked('filterCATEC', saved.catec);
+  setChecked('filterExcludeCATEC', saved.excludeCatec);
+  setChecked('filterFTTH', saved.ftth);
+  setChecked('filterExcludeFTTH', saved.excludeFTTH);
+  setChecked('showAllStates', saved.showAllStates);
+
+  setValueIfPresent('filterNodoEstado', saved.nodoEstado);
+  setValueIfPresent('filterSistema', saved.sistema);
+  setValueIfPresent('filterAlarma', saved.alarma);
+  setValueIfPresent('ordenarPorIngreso', saved.ordenarPorIngreso);
+  setValueIfPresent('daysWindow', saved.days);
+  setValueIfPresent('quickSearch', saved.quickSearch);
+
+  Filters.catec = Boolean(saved.catec);
+  Filters.excludeCatec = Boolean(saved.excludeCatec);
+  Filters.ftth = Boolean(saved.ftth);
+  Filters.excludeFTTH = Boolean(saved.excludeFTTH);
+  Filters.showAllStates = Boolean(saved.showAllStates);
+  Filters.nodoEstado = saved.nodoEstado || '';
+  Filters.sistema = saved.sistema || '';
+  Filters.alarma = saved.alarma || '';
+  Filters.ordenarPorIngreso = saved.ordenarPorIngreso || Filters.ordenarPorIngreso;
+  Filters.days = saved.days || Filters.days;
+  Filters.equipoModelo = Array.isArray(saved.equipoModelo) ? saved.equipoModelo.slice() : [];
+  Filters.equipoMarca = saved.equipoMarca || '';
+  Filters.equipoTerritorio = saved.equipoTerritorio || '';
+  if (Array.isArray(saved.selectedZonas)) {
+    Filters.selectedZonas = saved.selectedZonas.slice();
+  }
+  if (typeof saved.quickSearch === 'string') {
+    Filters.quickSearch = saved.quickSearch;
+  }
+  Filters.cmts = saved.cmts || '';
+  Filters.territorio = saved.territorio || '';
 }
 
 async function loadFile(e, tipo) {
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  const statusEl = document.getElementById(`status${tipo}`);
-  statusEl.textContent = 'Cargando...';
-  statusEl.classList.remove('loaded');
-  
-  let result;
-  
-  if (tipo === 4 && file.name.endsWith('.csv')) {
-    result = await dataProcessor.loadCSV(file);
-  } else {
-    result = await dataProcessor.loadExcel(file, tipo);
+  const input = e.target;
+  const file = input.files?.[0];
+  if (!file) {
+    return;
   }
-  
-  if (result.success) {
-    statusEl.textContent = `✓ ${result.rows} filas cargadas`;
-    statusEl.classList.add('loaded');
-    
-    const nombres = ['Consolidado 1', 'Consolidado 2', 'Nodos UP/DOWN', 'Alarmas FMS'];
-    toast(`${nombres[tipo - 1]} cargado: ${result.rows} registros`);
-    
-    if ((dataProcessor.consolidado1 || dataProcessor.consolidado2)) {
-      document.getElementById('mergeStatus').style.display = 'flex';
-      processData();
-    }
+
+  const statusEl = document.getElementById(`status${tipo}`);
+  if (!statusEl) {
+    console.warn(`No se encontró el indicador de estado para el archivo tipo ${tipo}`);
   } else {
-    statusEl.textContent = `✗ Error`;
-    toast(`Error al cargar archivo: ${result.error}`);
+    statusEl.textContent = 'Cargando...';
+    statusEl.classList.remove('loaded');
+  }
+
+  try {
+    const fileName = (file.name || '').toLowerCase();
+    let result;
+
+    if (tipo === 4 && fileName.endsWith('.csv')) {
+      result = await dataProcessor.loadCSV(file);
+    } else {
+      result = await dataProcessor.loadExcel(file, tipo);
+    }
+
+    if (result.success) {
+      if (statusEl) {
+        statusEl.textContent = `✓ ${result.rows} filas cargadas`;
+        statusEl.classList.add('loaded');
+      }
+
+      const nombres = ['Consolidado 1', 'Consolidado 2', 'Nodos UP/DOWN', 'Alarmas FMS'];
+      toast(`${nombres[tipo - 1]} cargado: ${result.rows} registros`);
+
+      if (dataProcessor.consolidado1 || dataProcessor.consolidado2) {
+        document.getElementById('mergeStatus').style.display = 'flex';
+        processData();
+      }
+    } else {
+      if (statusEl) {
+        statusEl.textContent = '✗ Error';
+      }
+      toast(`Error al cargar archivo: ${result.error}`);
+    }
+  } catch (error) {
+    console.error('Falla al procesar archivo:', error);
+    if (statusEl) {
+      statusEl.textContent = '✗ Error';
+    }
+    toast(`Error al procesar archivo: ${error?.message || error}`);
+  } finally {
+    if (input) {
+      input.value = '';
+    }
   }
 }
 
@@ -1470,7 +2630,13 @@ function populateFilters() {
   )];
   const terrSelect = document.getElementById('filterTerritorio');
   terrSelect.innerHTML = '<option value="">Todos</option>' + territorios.sort().map(t => `<option value="${t}">${t}</option>`).join('');
-  
+  if (savedFiltersSnapshot && savedFiltersSnapshot.territorio) {
+    const option = Array.from(terrSelect.options || []).find(opt => opt.value === savedFiltersSnapshot.territorio);
+    if (option) {
+      terrSelect.value = savedFiltersSnapshot.territorio;
+    }
+  }
+
   const cmtsList = [...new Set(
     allZones
       .map(z => z.cmts)
@@ -1478,24 +2644,56 @@ function populateFilters() {
   )];
   const cmtsSelect = document.getElementById('filterCMTS');
   cmtsSelect.innerHTML = '<option value="">Todos</option>' + cmtsList.sort().map(c => `<option value="${c}">${c}</option>`).join('');
+  if (savedFiltersSnapshot && savedFiltersSnapshot.cmts) {
+    const option = Array.from(cmtsSelect.options || []).find(opt => opt.value === savedFiltersSnapshot.cmts);
+    if (option) {
+      cmtsSelect.value = savedFiltersSnapshot.cmts;
+    }
+  }
+
+  const zoneNames = [...new Set(
+    (currentData.zonas || [])
+      .map(z => z.zona)
+      .filter(Boolean)
+  )];
+  const zoneOptionsConfig = {};
+  if (savedFiltersSnapshot) {
+    if (Array.isArray(savedFiltersSnapshot.selectedZonas) && savedFiltersSnapshot.selectedZonas.length) {
+      zoneOptionsConfig.selected = savedFiltersSnapshot.selectedZonas;
+    }
+    if (savedFiltersSnapshot.zoneSearch) {
+      zoneOptionsConfig.search = savedFiltersSnapshot.zoneSearch;
+    }
+  }
+  initializeZoneFilterOptions(zoneNames, zoneOptionsConfig);
 }
 
 function applyFilters() {
-  if (!currentData) return;
-  
-  Filters.catec = document.getElementById('filterCATEC').checked;
+  const catecEl = document.getElementById('filterCATEC');
+  const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+
+  Filters.catec = catecEl ? catecEl.checked : false;
+  Filters.excludeCatec = excludeCatecEl ? excludeCatecEl.checked : false;
   Filters.showAllStates = document.getElementById('showAllStates').checked;
   Filters.ftth = document.getElementById('filterFTTH').checked;
   Filters.excludeFTTH = document.getElementById('filterExcludeFTTH').checked;
   Filters.nodoEstado = document.getElementById('filterNodoEstado').value;
   Filters.cmts = document.getElementById('filterCMTS').value;
-  Filters.days = parseInt(document.getElementById('daysWindow').value);
+
+  const daysValue = parseInt(document.getElementById('daysWindow').value, 10);
+  Filters.days = Number.isFinite(daysValue) ? daysValue : CONFIG.defaultDays;
+
   Filters.territorio = document.getElementById('filterTerritorio').value;
   Filters.sistema = document.getElementById('filterSistema').value;
   Filters.alarma = document.getElementById('filterAlarma').value;
   Filters.quickSearch = document.getElementById('quickSearch').value;
   Filters.ordenarPorIngreso = document.getElementById('ordenarPorIngreso').value;
-  
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+
+  persistFilters();
+
+  if (!currentData) return;
+
   const filtered = Filters.apply(currentData.ordenes);
   
   const zones = dataProcessor.processZones(filtered);
@@ -1534,7 +2732,11 @@ function applyFilters() {
 }
 
 function resetFiltersState() {
-  document.getElementById('filterCATEC').checked = false;
+  const catecEl = document.getElementById('filterCATEC');
+  const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+
+  if (catecEl) catecEl.checked = false;
+  if (excludeCatecEl) excludeCatecEl.checked = false;
   document.getElementById('showAllStates').checked = false;
   document.getElementById('filterFTTH').checked = false;
   document.getElementById('filterExcludeFTTH').checked = false;
@@ -1547,6 +2749,8 @@ function resetFiltersState() {
   document.getElementById('quickSearch').value = '';
   document.getElementById('ordenarPorIngreso').value = 'desc';
   Filters.criticidad = '';
+  resetZoneFilterState();
+  closeZoneFilter();
 }
 
 function clearFilters() {
@@ -1555,43 +2759,61 @@ function clearFilters() {
 }
 
 function filterByStat(statType) {
-  resetFiltersState();
+  const quickSearchInput = document.getElementById('quickSearch');
+
+  if (statType === 'territoriosCriticos') {
+    if (!window.territoriosData) {
+      toast('❌ No hay datos de territorios disponibles');
+      return;
+    }
+
+    const territoriosCriticos = window.territoriosData.filter(t => t.esCritico);
+    if (territoriosCriticos.length === 0) {
+      toast('✅ No hay territorios críticos en este momento');
+      return;
+    }
+
+    showTerritoriosCriticosModal(territoriosCriticos);
+    return;
+  }
+
+  if (quickSearchInput) {
+    quickSearchInput.value = '';
+  }
+  Filters.quickSearch = '';
+
+  resetZoneFilterState({ apply: false });
 
   switch (statType) {
     case 'total':
     case 'zonas':
-      toast('🔄 Mostrando todas las zonas (filtros reseteados)');
+      toast('🔄 Mostrando todas las zonas (filtros avanzados conservados)');
       break;
-    
-    case 'territoriosCriticos':
-      if (!window.territoriosData) {
-        toast('❌ No hay datos de territorios disponibles');
-        break;
-      }
-      
-      const territoriosCriticos = window.territoriosData.filter(t => t.esCritico);
-      if (territoriosCriticos.length === 0) {
-        toast('✅ No hay territorios críticos en este momento');
-        break;
-      }
-      
-      showTerritoriosCriticosModal(territoriosCriticos);
-      return;
-    
-    case 'ftth':
-      document.getElementById('filterFTTH').checked = true;
-      document.getElementById('filterExcludeFTTH').checked = false;
-      toast('🔌 Mostrando solo zonas FTTH');
+
+    case 'ftth': {
+      const ftthEl = document.getElementById('filterFTTH');
+      const excludeEl = document.getElementById('filterExcludeFTTH');
+      if (ftthEl) ftthEl.checked = true;
+      if (excludeEl) excludeEl.checked = false;
+      toast('🔌 Mostrando solo zonas FTTH (filtros avanzados conservados)');
       break;
-    
-    case 'alarmas':
-      document.getElementById('filterAlarma').value = 'con-alarma';
-      toast('🚨 Mostrando zonas con alarmas activas');
+    }
+
+    case 'alarmas': {
+      const alarmaEl = document.getElementById('filterAlarma');
+      if (alarmaEl) alarmaEl.value = 'con-alarma';
+      toast('🚨 Mostrando zonas con alarmas activas (filtros avanzados conservados)');
       break;
-    
-    case 'nodosCriticos':
-      document.getElementById('filterNodoEstado').value = 'critical';
-      toast('🟥 Mostrando zonas con NODOS CRÍTICOS');
+    }
+
+    case 'nodosCriticos': {
+      const nodoEl = document.getElementById('filterNodoEstado');
+      if (nodoEl) nodoEl.value = 'critical';
+      toast('🟥 Mostrando zonas con NODOS CRÍTICOS (filtros avanzados conservados)');
+      break;
+    }
+
+    default:
       break;
   }
 
@@ -1930,25 +3152,57 @@ function renderModalContent() {
     });
   }
   
+  const chartCounts = UIRenderer.normalizeCounts(currentZone.last7DaysCounts);
+  const chartLabels = Array.isArray(currentZone.last7Days) ? currentZone.last7Days : [];
+  const maxChartValue = Math.max(...chartCounts, 1);
+
   let html = '<div class="chart-container">';
   html += '<div class="chart-title">📊 Distribución de Ingresos (7 días)</div>';
-  html += '<div style="display: flex; justify-content: space-around; align-items: flex-end; height: 150px; padding: 10px;">';
-  
-  currentZone.last7DaysCounts.forEach((count, i) => {
-    const height = currentZone.last7DaysCounts.length > 0 ? (count / Math.max(...currentZone.last7DaysCounts, 1)) * 120 : 0;
-    html += `<div style="text-align: center;">
-      <div style="width: 60px; height: ${height}px; background: linear-gradient(180deg, #0078D4 0%, #005A9E 100%); border-radius: 4px 4px 0 0; margin: 0 auto;"></div>
-      <div style="font-size: 0.75rem; font-weight: 700; margin-top: 4px;">${count}</div>
-      <div style="font-size: 0.6875rem; color: var(--text-secondary);">${currentZone.last7Days[i]}</div>
-    </div>`;
-  });
-  
-  html += '</div></div>';
+
+  if (!chartCounts.length) {
+    html += '<div class="sparkline-placeholder" style="height: 150px; display: flex; align-items: center; justify-content: center;">Sin datos</div>';
+  } else {
+    html += '<div style="display: flex; justify-content: space-around; align-items: flex-end; height: 150px; padding: 10px;">';
+
+    chartCounts.forEach((count, i) => {
+      const barHeight = maxChartValue > 0 ? (count / maxChartValue) * 120 : 0;
+      const label = chartLabels[i] || '';
+      html += `<div style="text-align: center;">
+        <div style="width: 60px; height: ${barHeight}px; background: linear-gradient(180deg, #0078D4 0%, #005A9E 100%); border-radius: 4px 4px 0 0; margin: 0 auto;"></div>
+        <div style="font-size: 0.75rem; font-weight: 700; margin-top: 4px;">${count}</div>
+        <div style="font-size: 0.6875rem; color: var(--text-secondary);">${label}</div>
+      </div>`;
+    });
+
+    html += '</div>';
+  }
+
+  html += '</div>';
   
   html += `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
     <strong>Total órdenes mostradas:</strong> ${ordenes.length} de ${currentZone.ordenes.length}
   </div>`;
-  
+
+  const diagnosticosTecnicos = Array.isArray(currentZone.diagnosticos) ? currentZone.diagnosticos.filter(Boolean) : [];
+  if (diagnosticosTecnicos.length) {
+    const chips = diagnosticosTecnicos.slice(0, 6).map(d => {
+      const raw = String(d);
+      const title = escapeHtml(raw);
+      const truncated = raw.length > 80 ? `${raw.slice(0, 77)}…` : raw;
+      const label = escapeHtml(truncated);
+      return `<span class="diagnostico-tag" title="${title}">${label}</span>`;
+    }).join('');
+    const extra = diagnosticosTecnicos.length > 6
+      ? `<span class="diagnostico-tag diagnostico-tag--more">+${diagnosticosTecnicos.length - 6}</span>`
+      : '';
+    html += `<div class="diagnostico-summary">
+      <div class="diagnostico-summary__title">Diagnóstico técnico en la zona</div>
+      <div class="diagnostico-tags">${chips}${extra}</div>
+    </div>`;
+  } else {
+    html += `<div class="diagnostico-summary diagnostico-summary--empty">Diagnóstico técnico: sin datos registrados en las órdenes de la zona.</div>`;
+  }
+
   html += '<div class="table-container"><div style="max-height: 400px; overflow-y: auto;"><table class="detail-table"><thead><tr>';
   html += '<th style="position: sticky; top: 0; z-index: 10;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>';
   
@@ -2088,57 +3342,40 @@ function exportBEFAN() {
 }
 
 function exportExcelVista(){
+  const zonas = Array.isArray(window.currentAnalyzedZones) ? window.currentAnalyzedZones : [];
+  if (!zonas.length) {
+    toast('No hay datos para exportar');
+    return;
+  }
+
   const wb = XLSX.utils.book_new();
+  const usedNames = new Set();
+  let zonasConDatos = 0;
+  let totalOrdenes = 0;
 
-  if (Array.isArray(window.currentAnalyzedZones) && window.currentAnalyzedZones.length){
-    const zonasData = window.currentAnalyzedZones.map(z => ({
-      Zona: z.zona,
-      Tipo: z.tipo,
-      Red: z.tipo === 'FTTH' ? z.zonaHFC : '',
-      CMTS: z.cmts,
-      Tiene_Alarma: z.tieneAlarma ? 'SÍ' : 'NO',
-      Alarmas_Activas: z.alarmasActivas,
-      Total_OTs: z.totalOTs,
-      Ingreso_N: z.ingresoN,
-      Ingreso_N1: z.ingresoN1,
-      Max_Dia: z.maxDia
-    }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(zonasData), 'Zonas');
-  }
+  zonas.forEach((z, index) => {
+    const rows = buildZoneExportRows(z);
+    if (!rows || !rows.length) {
+      return;
+    }
 
-  if (Array.isArray(window.currentCMTSData) && window.currentCMTSData.length){
-    const cmtsData = window.currentCMTSData.map(c => ({
-      CMTS: c.cmts,
-      Zonas: c.zonas.length,
-      Total_OTs: c.totalOTs,
-      Zonas_UP: c.zonasUp,
-      Zonas_DOWN: c.zonasDown,
-      Zonas_Criticas: c.zonasCriticas
-    }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cmtsData), 'CMTS');
-  }
+    const sheet = createWorksheetFromRows(rows, ZONE_EXPORT_HEADERS);
+    const nombreBase = z?.zona ? `Zona_${z.zona}` : `Zona_${index + 1}`;
+    const agregado = appendSheet(wb, sheet, nombreBase, usedNames);
+    if (agregado) {
+      zonasConDatos += 1;
+      totalOrdenes += rows.length;
+    }
+  });
 
-  if (window.edificiosData && window.edificiosData.length){
-    const edi = window.edificiosData.map(e => ({
-      Direccion: e.direccion,
-      Zona: e.zona,
-      Territorio: e.territorio,
-      Total_OTs: e.casos.length
-    }));
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(edi), 'Edificios');
-  }
-
-  if (window.equiposPorZona && window.equiposPorZona.size){
-    const todos = [];
-    window.equiposPorZona.forEach((arr, zona) => {
-      arr.forEach(it => todos.push({ ...it, zona }));
-    });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(todos), 'Equipos');
+  if (zonasConDatos === 0) {
+    toast('No hay datos para exportar');
+    return;
   }
 
   const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `Vista_Filtrada_${fecha}.xlsx`);
-  toast('✓ Vista filtrada exportada');
+  toast(`✓ Vista exportada (${zonasConDatos} zonas, ${totalOrdenes} órdenes)`);
 }
 
 function exportExcelZonasCrudo(){
