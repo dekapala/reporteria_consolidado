@@ -31,6 +31,15 @@ const FMS_TIPOS = {
   'NAP': 'NAP'
 };
 
+const DIAGNOSTICO_TECNICO_KEYS = [
+  'Diagnostico Tecnico',
+  'Diagnóstico Técnico',
+  'Diagnostico tecnico',
+  'Diagnóstico tecnico',
+  'Diagnostico técnico',
+  'Diagnóstico Técnico '
+];
+
 const TerritorioUtils = {
   normalizar(territorio) {
     if (!territorio) return '';
@@ -53,6 +62,24 @@ const TerritorioUtils = {
 };
 
 function stripAccents(s=''){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+
+function extractDiagnosticoTecnico(order){
+  if (!order) return '';
+  const metaValue = order.__meta?.diagnosticoTecnico;
+  if (metaValue) {
+    const str = String(metaValue).trim();
+    if (str) return str;
+  }
+  for (const key of DIAGNOSTICO_TECNICO_KEYS){
+    if (!key) continue;
+    const value = order[key];
+    if (value !== null && value !== undefined){
+      const str = String(value).trim();
+      if (str) return str;
+    }
+  }
+  return '';
+}
 
 function findDispositivosColumn(rowObj){
   const keys = Object.keys(rowObj||{});
@@ -183,6 +210,15 @@ function toast(msg) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 4000);
+}
+
+function escapeHtml(str){
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function toggleUtilities() {
@@ -814,7 +850,7 @@ class DataProcessor {
             ordenesPerDay.get(dk).push(o);
           }
 
-          const diag = o['Diagnostico Tecnico'] || o['Diagnóstico Técnico'] || '';
+          const diag = extractDiagnosticoTecnico(o);
           if (diag) diagnosticos.add(diag);
         }
       });
@@ -1439,6 +1475,7 @@ const UIRenderer = {
     html += '<th>Zona</th><th>Tipo</th><th>Red</th><th>CMTS</th><th>Nodo</th>';
     html += '<th>Alarma</th><th>Gráfico 7 Días</th>';
     html += '<th class="number">Total</th><th class="number">N</th><th class="number">N-1</th>';
+    html += '<th>Diagnóstico técnico</th>';
     html += '<th>Acción</th>';
     html += '</tr></thead><tbody>';
     
@@ -1465,6 +1502,22 @@ const UIRenderer = {
       const cmtsShort = z.cmts ? z.cmts.substring(0, 15) + (z.cmts.length > 15 ? '...' : '') : '-';
       const sparkline = this.renderSparkline(z.last7DaysCounts, z.last7Days);
       
+      const diagnosticos = Array.isArray(z.diagnosticos) ? z.diagnosticos.filter(Boolean) : [];
+      let diagnosticoHtml = '<span class="diagnostico-tag diagnostico-tag--empty">Sin datos</span>';
+      if (diagnosticos.length) {
+        const chips = diagnosticos.slice(0, 3).map(d => {
+          const raw = String(d);
+          const title = escapeHtml(raw);
+          const truncated = raw.length > 80 ? `${raw.slice(0, 77)}…` : raw;
+          const label = escapeHtml(truncated);
+          return `<span class="diagnostico-tag" title="${title}">${label}</span>`;
+        }).join('');
+        const extra = diagnosticos.length > 3
+          ? `<span class="diagnostico-tag diagnostico-tag--more">+${diagnosticos.length - 3}</span>`
+          : '';
+        diagnosticoHtml = `<div class="diagnostico-tags">${chips}${extra}</div>`;
+      }
+
       html += `<tr>
         <td><strong>${z.zona}</strong></td>
         <td>${badgeTipo}</td>
@@ -1476,6 +1529,7 @@ const UIRenderer = {
         <td class="number">${z.totalOTs}</td>
         <td class="number">${z.ingresoN}</td>
         <td class="number">${z.ingresoN1}</td>
+        <td>${diagnosticoHtml}</td>
         <td>
           <div style="display:flex; gap:4px;">
             <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" onclick="openModal(${idx})">👁️ Ver</button>
@@ -1733,6 +1787,7 @@ function applyEquiposFilters() {
   Filters.equipoMarca = document.getElementById('filterEquipoMarca').value;
   Filters.equipoTerritorio = document.getElementById('filterEquipoTerritorio').value;
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
+  persistFilters();
 }
 
 function clearEquiposFilters() {
@@ -1740,6 +1795,7 @@ function clearEquiposFilters() {
   Filters.equipoMarca = '';
   Filters.equipoTerritorio = '';
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
+  persistFilters();
 }
 
 function toggleEquiposGrupo(zona){
@@ -2097,7 +2153,9 @@ let currentZone = null;
 let selectedOrders = new Set();
 
 document.addEventListener('DOMContentLoaded', () => {
+  savedFiltersSnapshot = FilterPersistence.load();
   setupEventListeners();
+  restoreFiltersToControls(savedFiltersSnapshot);
 });
 
 function setupEventListeners() {
@@ -2272,7 +2330,10 @@ function applyFilters() {
   Filters.excludeFTTH = document.getElementById('filterExcludeFTTH').checked;
   Filters.nodoEstado = document.getElementById('filterNodoEstado').value;
   Filters.cmts = document.getElementById('filterCMTS').value;
-  Filters.days = parseInt(document.getElementById('daysWindow').value);
+
+  const daysValue = parseInt(document.getElementById('daysWindow').value, 10);
+  Filters.days = Number.isFinite(daysValue) ? daysValue : CONFIG.defaultDays;
+
   Filters.territorio = document.getElementById('filterTerritorio').value;
   Filters.sistema = document.getElementById('filterSistema').value;
   Filters.alarma = document.getElementById('filterAlarma').value;
@@ -2345,43 +2406,61 @@ function clearFilters() {
 }
 
 function filterByStat(statType) {
-  resetFiltersState();
+  const quickSearchInput = document.getElementById('quickSearch');
+
+  if (statType === 'territoriosCriticos') {
+    if (!window.territoriosData) {
+      toast('❌ No hay datos de territorios disponibles');
+      return;
+    }
+
+    const territoriosCriticos = window.territoriosData.filter(t => t.esCritico);
+    if (territoriosCriticos.length === 0) {
+      toast('✅ No hay territorios críticos en este momento');
+      return;
+    }
+
+    showTerritoriosCriticosModal(territoriosCriticos);
+    return;
+  }
+
+  if (quickSearchInput) {
+    quickSearchInput.value = '';
+  }
+  Filters.quickSearch = '';
+
+  resetZoneFilterState({ apply: false });
 
   switch (statType) {
     case 'total':
     case 'zonas':
-      toast('🔄 Mostrando todas las zonas (filtros reseteados)');
+      toast('🔄 Mostrando todas las zonas (filtros avanzados conservados)');
       break;
-    
-    case 'territoriosCriticos':
-      if (!window.territoriosData) {
-        toast('❌ No hay datos de territorios disponibles');
-        break;
-      }
-      
-      const territoriosCriticos = window.territoriosData.filter(t => t.esCritico);
-      if (territoriosCriticos.length === 0) {
-        toast('✅ No hay territorios críticos en este momento');
-        break;
-      }
-      
-      showTerritoriosCriticosModal(territoriosCriticos);
-      return;
-    
-    case 'ftth':
-      document.getElementById('filterFTTH').checked = true;
-      document.getElementById('filterExcludeFTTH').checked = false;
-      toast('🔌 Mostrando solo zonas FTTH');
+
+    case 'ftth': {
+      const ftthEl = document.getElementById('filterFTTH');
+      const excludeEl = document.getElementById('filterExcludeFTTH');
+      if (ftthEl) ftthEl.checked = true;
+      if (excludeEl) excludeEl.checked = false;
+      toast('🔌 Mostrando solo zonas FTTH (filtros avanzados conservados)');
       break;
-    
-    case 'alarmas':
-      document.getElementById('filterAlarma').value = 'con-alarma';
-      toast('🚨 Mostrando zonas con alarmas activas');
+    }
+
+    case 'alarmas': {
+      const alarmaEl = document.getElementById('filterAlarma');
+      if (alarmaEl) alarmaEl.value = 'con-alarma';
+      toast('🚨 Mostrando zonas con alarmas activas (filtros avanzados conservados)');
       break;
-    
-    case 'nodosCriticos':
-      document.getElementById('filterNodoEstado').value = 'critical';
-      toast('🟥 Mostrando zonas con NODOS CRÍTICOS');
+    }
+
+    case 'nodosCriticos': {
+      const nodoEl = document.getElementById('filterNodoEstado');
+      if (nodoEl) nodoEl.value = 'critical';
+      toast('🟥 Mostrando zonas con NODOS CRÍTICOS (filtros avanzados conservados)');
+      break;
+    }
+
+    default:
       break;
   }
 
@@ -2750,7 +2829,27 @@ function renderModalContent() {
   html += `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
     <strong>Total órdenes mostradas:</strong> ${ordenes.length} de ${currentZone.ordenes.length}
   </div>`;
-  
+
+  const diagnosticosTecnicos = Array.isArray(currentZone.diagnosticos) ? currentZone.diagnosticos.filter(Boolean) : [];
+  if (diagnosticosTecnicos.length) {
+    const chips = diagnosticosTecnicos.slice(0, 6).map(d => {
+      const raw = String(d);
+      const title = escapeHtml(raw);
+      const truncated = raw.length > 80 ? `${raw.slice(0, 77)}…` : raw;
+      const label = escapeHtml(truncated);
+      return `<span class="diagnostico-tag" title="${title}">${label}</span>`;
+    }).join('');
+    const extra = diagnosticosTecnicos.length > 6
+      ? `<span class="diagnostico-tag diagnostico-tag--more">+${diagnosticosTecnicos.length - 6}</span>`
+      : '';
+    html += `<div class="diagnostico-summary">
+      <div class="diagnostico-summary__title">Diagnóstico técnico en la zona</div>
+      <div class="diagnostico-tags">${chips}${extra}</div>
+    </div>`;
+  } else {
+    html += `<div class="diagnostico-summary diagnostico-summary--empty">Diagnóstico técnico: sin datos registrados en las órdenes de la zona.</div>`;
+  }
+
   html += '<div class="table-container"><div style="max-height: 400px; overflow-y: auto;"><table class="detail-table"><thead><tr>';
   html += '<th style="position: sticky; top: 0; z-index: 10;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>';
   
