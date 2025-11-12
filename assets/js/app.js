@@ -183,21 +183,29 @@ function toast(msg) {
 
 function toggleUtilities() {
   const menu = document.getElementById('utilitiesMenu');
+  if (!menu) return;
   menu.classList.toggle('show');
 }
 
 document.addEventListener('click', (e) => {
   const dropdown = document.querySelector('.utilities-dropdown');
   const menu = document.getElementById('utilitiesMenu');
-  if (dropdown && !dropdown.contains(e.target)) {
+  if (dropdown && !dropdown.contains(e.target) && menu) {
     menu.classList.remove('show');
   }
 });
 
 function openPlanillasNewTab() {
-  document.getElementById('utilitiesMenu').classList.remove('show');
+  const utilitiesMenu = document.getElementById('utilitiesMenu');
+  if (utilitiesMenu) {
+    utilitiesMenu.classList.remove('show');
+  }
 
   const newWindow = window.open('', '_blank', 'width=1000,height=800');
+  if (!newWindow) {
+    toast('🔒 Habilitá las ventanas emergentes para abrir las herramientas de Planillas.');
+    return;
+  }
   
   const planillasHTML = `<!DOCTYPE html>
 <html lang="es">
@@ -317,7 +325,10 @@ Generado desde Panel Fulfillment v5.0\`;
 }
 
 function openUsefulLinks() {
-  document.getElementById('utilitiesMenu').classList.remove('show');
+  const utilitiesMenu = document.getElementById('utilitiesMenu');
+  if (utilitiesMenu) {
+    utilitiesMenu.classList.remove('show');
+  }
 
   const win = window.open('', '_blank', 'width=1200,height=860,scrollbars=yes');
   if (!win) {
