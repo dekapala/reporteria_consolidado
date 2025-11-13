@@ -126,10 +126,15 @@ const TextUtils = {
   parseDispositivosJSON(jsonStr) {
     try {
       if (!jsonStr) return [];
+      
+      const str = String(jsonStr).trim();
+      if (!str) return [];
+      
+      // MÉTODO 1: Intentar parsear JSON completo
       try {
-        const parsed = JSON.parse(jsonStr);
+        const parsed = JSON.parse(str);
         const arr = parsed?.openResp || parsed?.open_response || parsed?.data || [];
-        if (Array.isArray(arr)) {
+        if (Array.isArray(arr) && arr.length > 0) {
           return arr.map(d => ({
             category: d.category || '',
             description: d.description || '',
@@ -139,25 +144,39 @@ const TextUtils = {
             type: d.type || ''
           }));
         }
-      } catch { }
-      const get = (f) => {
-        const re = new RegExp(`"${f}"\\s*:\\s*"([^"]*)"`, 'i');
-        const m = String(jsonStr).match(re);
-        return m ? m[1] : '';
+      } catch (e) {
+        // JSON truncado o inválido, continuar con método alternativo
+        console.log('JSON truncado, usando extracción por regex');
+      }
+      
+      // MÉTODO 2: Extracción por expresiones regulares (para JSON truncado a 255 chars)
+      const get = (field) => {
+        // Buscar "field":"value"
+        const re = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 'i');
+        const match = str.match(re);
+        return match ? match[1] : '';
       };
-
-        
-      if (/macAddress|serialNumber|model|category|description/i.test(jsonStr)){
-        return [{
+      
+      // Verificar si tiene algún campo relevante
+      if (/category|model|macAddress|serialNumber|type|description/i.test(str)) {
+        const dispositivo = {
           category: get('category'),
           description: get('description'),
           model: get('model'),
           serialNumber: get('serialNumber'),
           macAddress: get('macAddress'),
           type: get('type')
-        }];
+        };
+        
+        // Solo retornar si al menos tiene model, mac o type
+        if (dispositivo.model || dispositivo.macAddress || dispositivo.type) {
+          return [dispositivo];
+        }
       }
-    } catch {}
+      
+    } catch (err) {
+      console.warn('Error parseando dispositivos:', err.message);
+    }
     return [];
   },
   detectarSistema(numCaso) {
