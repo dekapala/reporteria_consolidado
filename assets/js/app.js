@@ -122,44 +122,34 @@ function normalizeMac(mac=''){
   return clean.match(/.{1,2}/g).join(':');
 }
 
-function normalizeDevice(device){
-  if (!device || typeof device !== 'object') return null;
-  const mapValue = (value) => (value === null || value === undefined) ? '' : String(value).trim();
-
-  const macRaw = device.mac || device.macAddress || device.mac_address || device.MAC || device.macAddressRaw || '';
-  const macFormatted = (typeof TextUtils !== 'undefined' && TextUtils?.formatMac)
-    ? TextUtils.formatMac(macRaw)
-    : (normalizeMac(macRaw) || mapValue(macRaw));
-  const macValue = mapValue(macFormatted);
-  const serialNumber = mapValue(device.serialNumber || device.serial || device.serie || device.sn || device.numeroSerie);
-  const model = mapValue(device.model || device.modelo);
-  const category = mapValue(device.category || device.brand || device.marca);
-  const brand = mapValue(device.brand || device.category || device.marca || category);
-  const technology = mapValue(device.technology || device.description || device.detalle);
-  const type = mapValue(device.type || device.tipo);
-
-  if (!(macValue || serialNumber || model || category || technology || type || brand)) {
-    return null;
-  }
-
-  return {
-    macAddress: macValue,
-    serialNumber,
-    model,
-    category,
-    technology,
-    type,
-    brand,
-    mac: macValue
-  };
-}
-
 function pickPreferredDevice(devs=[]){
   if (!Array.isArray(devs) || !devs.length) return null;
 
-  const normalizedDevices = devs
-    .map(normalizeDevice)
-    .filter(Boolean);
+  const mapValue = (value) => {
+    if (value === null || value === undefined) return '';
+    const str = String(value).trim();
+    return str;
+  };
+
+  const normalizedDevices = devs.map(dev => {
+    if (!dev || typeof dev !== 'object') return null;
+    const brand = mapValue(dev.brand || dev.category || dev.marca);
+    const technology = mapValue(dev.technology || dev.description || dev.detalle);
+    const model = mapValue(dev.model || dev.modelo);
+    const macRaw = dev.mac || dev.macAddress || dev.mac_address || dev.MAC;
+    const mac = normalizeMac(macRaw) || mapValue(macRaw);
+    const type = mapValue(dev.type || dev.tipo);
+
+    if (!(brand || technology || model || mac || type)) return null;
+
+    return {
+      brand,
+      technology,
+      model,
+      mac,
+      type
+    };
+  }).filter(Boolean);
 
   if (!normalizedDevices.length) return null;
 
@@ -175,12 +165,13 @@ function pickPreferredDevice(devs=[]){
 function ensureOrderDeviceMeta(order){
   if (!order || typeof order !== 'object') return null;
 
-  const meta = order.__meta = order.__meta || {};
+  if (!order.__meta) order.__meta = {};
+  if (order.__meta.device) return order.__meta.device;
 
   let dispositivos = [];
 
-  if (Array.isArray(meta.dispositivos) && meta.dispositivos.length) {
-    dispositivos = meta.dispositivos;
+  if (Array.isArray(order.__meta.dispositivos) && order.__meta.dispositivos.length) {
+    dispositivos = order.__meta.dispositivos;
   } else {
     const colInfo = findDispositivosColumn(order);
     if (colInfo && order[colInfo]) {
@@ -189,15 +180,51 @@ function ensureOrderDeviceMeta(order){
   }
 
   const normalizedDevices = Array.isArray(dispositivos)
-    ? dispositivos.map(normalizeDevice).filter(Boolean)
+    ? dispositivos.map(dev => {
+        if (!dev || typeof dev !== 'object') return null;
+        const mapValue = (val) => val === null || val === undefined ? '' : String(val).trim();
+        const macAddress = normalizeMac(dev.macAddress || dev.mac || dev.mac_address || dev.MAC) || mapValue(dev.macAddress || dev.mac);
+        const serialNumber = mapValue(dev.serialNumber || dev.serial || dev.serie);
+        const model = mapValue(dev.model || dev.modelo);
+        const category = mapValue(dev.category || dev.brand || dev.marca);
+        const technology = mapValue(dev.technology || dev.description || dev.detalle);
+        const type = mapValue(dev.type || dev.tipo);
+        const brand = mapValue(dev.brand || dev.category || dev.marca || category);
+
+        if (!(macAddress || serialNumber || model || category || technology || type || brand)) {
+          return null;
+        }
+
+        return {
+          macAddress,
+          serialNumber,
+          model,
+          category,
+          technology,
+          type,
+          brand,
+          mac: macAddress
+        };
+      }).filter(Boolean)
     : [];
 
-  meta.dispositivos = normalizedDevices;
+  order.__meta.dispositivos = normalizedDevices;
+  dispositivos = normalizedDevices;
 
-  const device = pickPreferredDevice(normalizedDevices);
-  meta.device = device || null;
+  const device = pickPreferredDevice(dispositivos) || null;
+  if (device && Array.isArray(dispositivos) && dispositivos.length) {
+    const [first] = dispositivos;
+    if (device !== first) {
+      order.__meta.dispositivos = [device, ...dispositivos.filter(d => d !== device)];
+    }
+  }
+  if (device) {
+    order.__meta.device = device;
+    return device;
+  }
 
-  return meta.device;
+  order.__meta.device = null;
+  return null;
 }
 
 const DateUtils = {
@@ -973,9 +1000,10 @@ class DataProcessor {
     try {
       const buffer = await readFileAsUint8Array(file);
       const decoder = new TextDecoder('utf-8');
-      const text = decoder.decode(buffer || new Uint8Array());
+      const text = decoder.decode(buffer);
+      const lines = text.split('\n').filter(l => l.trim());
 
-      if (!text.trim()) {
+      if (lines.length < 2) {
         return {success: false, error: 'CSV vacío'};
       }
 
@@ -2446,8 +2474,7 @@ function buildOrderExportRow(order, zoneInfo){
     const primaryDevice = order.__meta.dispositivos[0];
     mac = primaryDevice.macAddress || primaryDevice.mac || '';
   }
-  const formattedMac = TextUtils.formatMac(mac);
-  mac = device.mac || formattedMac || mac || '';
+  mac = device.mac || normalizeMac(mac) || mac || '';
   const modelo = device.model || '';
   const tipoEquipo = device.type || device.technology || pickFirstValue(order, ORDER_FIELD_KEYS.tipo);
 
@@ -2596,21 +2623,48 @@ function setupEventListeners() {
   on('fileConsolidado2', 'change', e => loadFile(e, 2));
   on('fileNodos', 'change', e => loadFile(e, 3));
   on('fileFMS', 'change', e => loadFile(e, 4));
-
+  
   const filterCatec = document.getElementById('filterCATEC');
   const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
-  on('filterCATEC', 'change', e => {
-    if (e.target.checked && filterExcludeCatec) {
-      filterExcludeCatec.checked = false;
+
+  if (filterCatec && filterExcludeCatec) {
+    filterCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterExcludeCatec.checked = false;
+      }
+      applyFilters();
+    });
+
+    filterExcludeCatec.addEventListener('change', e => {
+      if (e.target.checked) {
+        filterCatec.checked = false;
+      }
+      applyFilters();
+    });
+  }
+  on('showAllStates', 'change', applyFilters);
+  on('filterFTTH', 'change', e => {
+    if (e.target.checked) {
+      const exclude = document.getElementById('filterExcludeFTTH');
+      if (exclude) exclude.checked = false;
     }
     applyFilters();
   });
-  on('filterExcludeCATEC', 'change', e => {
-    if (e.target.checked && filterCatec) {
-      filterCatec.checked = false;
+  on('filterExcludeFTTH', 'change', e => {
+    if (e.target.checked) {
+      const ftth = document.getElementById('filterFTTH');
+      if (ftth) ftth.checked = false;
     }
     applyFilters();
   });
+  on('filterNodoEstado', 'change', applyFilters);
+  on('filterCMTS', 'change', applyFilters);
+  on('daysWindow', 'change', applyFilters);
+  on('filterTerritorio', 'change', applyFilters);
+  on('filterSistema', 'change', applyFilters);
+  on('filterAlarma', 'change', applyFilters);
+  on('quickSearch', 'input', debounce(applyFilters, 300));
+  on('ordenarPorIngreso', 'change', applyFilters);
 
   on('showAllStates', 'change', applyFilters);
 
@@ -3382,7 +3436,7 @@ function renderModalContent() {
     if (!fallbackMac && dispositivoPrincipal) {
       fallbackMac = dispositivoPrincipal.macAddress || dispositivoPrincipal.mac || '';
     }
-    fallbackMac = TextUtils.formatMac(fallbackMac) || '';
+    fallbackMac = normalizeMac(fallbackMac) || fallbackMac || '';
     const fallbackTipo = pickFirstValue(o, ORDER_FIELD_KEYS.tipo);
     const deviceData = {
       MAC: device.mac || fallbackMac,
