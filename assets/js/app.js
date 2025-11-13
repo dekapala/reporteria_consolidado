@@ -268,132 +268,114 @@ const NumberUtils = {
   }
 };
 
-const TextUtils = {
+const TextUtils = window.TextUtils || {
   normalize(text) {
-    return String(text||'')
+    return String(text || '')
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g,'')
+      .replace(/[\u0300-\u036f]/g, '')
       .trim();
   },
 
-    
   matches(text, query) {
     return this.normalize(text).includes(this.normalize(query));
   },
+
   matchesMultiple(text, queries) {
     const normalized = this.normalize(text);
     return queries.some(q => normalized.includes(this.normalize(q)));
   },
+
   parseDispositivosJSON(jsonStr) {
-    if (!jsonStr) return [];
+    if (!jsonStr || typeof jsonStr !== 'string') return [];
 
-    const resultados = [];
-    const firmas = new Set();
+    let s = jsonStr.trim()
+      .replace(/&quot;/g, '"')
+      .replace(/\r?\n/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/;+\s*$/g, '');
 
-    const normalizarClave = (clave) => stripAccents(String(clave || '')).toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normalizarValor = (valor) => {
-      if (valor === null || valor === undefined) return '';
-      return String(valor).trim();
+    const first = s.indexOf('{');
+    const last = s.lastIndexOf('}');
+    if (first !== -1 && last > first) {
+      s = s.slice(first, last + 1);
+    }
+
+    if (/openResp/i.test(s) && !/\}\s*\]\s*\}/.test(s)) {
+      if (/\}\s*$/.test(s)) s = s.replace(/\}\s*$/, '}]}');
+      if (/\]\s*$/.test(s)) s = s.replace(/\]\s*$/, ']}');
+    }
+
+    const normalizeValue = (value) => {
+      if (value === null || value === undefined) return '';
+      return String(value).trim();
     };
 
-    const agregar = (entrada = {}) => {
-      const limpio = {
-        category: normalizarValor(entrada.category),
-        description: normalizarValor(entrada.description),
-        model: normalizarValor(entrada.model),
-        serialNumber: normalizarValor(entrada.serialNumber),
-        macAddress: normalizarValor(entrada.macAddress),
-        type: normalizarValor(entrada.type)
-      };
+    const tryParse = () => {
+      try {
+        const parsed = JSON.parse(s);
+        let arr = null;
 
-      const tieneDatosClave = limpio.macAddress || limpio.serialNumber || limpio.model || limpio.description;
-      if (!tieneDatosClave) return;
-
-      const firma = `${limpio.macAddress}||${limpio.serialNumber}||${limpio.model}||${limpio.description}`;
-      if (firmas.has(firma)) return;
-      firmas.add(firma);
-      resultados.push(limpio);
-    };
-
-    const obtenerDesdeObjeto = (obj) => {
-      if (!obj || typeof obj !== 'object') return;
-
-      const mapa = {};
-      Object.keys(obj).forEach(key => {
-        mapa[normalizarClave(key)] = obj[key];
-      });
-
-      const obtener = (...variantes) => {
-        for (const variante of variantes) {
-          const clave = normalizarClave(variante);
-          if (Object.prototype.hasOwnProperty.call(mapa, clave)) {
-            const valor = normalizarValor(mapa[clave]);
-            if (valor) return valor;
+        if (Array.isArray(parsed)) {
+          arr = parsed;
+        } else if (parsed && typeof parsed === 'object') {
+          const candidates = parsed.openResp || parsed.open_response || parsed.data;
+          if (Array.isArray(candidates)) {
+            arr = candidates;
+          } else if (candidates && typeof candidates === 'object') {
+            arr = [candidates];
           }
         }
-        return '';
-      };
 
-      const entrada = {
-        category: obtener('category', 'categoria'),
-        description: obtener('description', 'descripcion', 'detalle'),
-        model: obtener('model', 'modelo'),
-        serialNumber: obtener('serialnumber', 'serial', 'serie', 'numerodeserie', 'nroserie', 'sn', 'serialid'),
-        macAddress: obtener('macaddress', 'mac', 'macaddr', 'direccionmac', 'direccionmacaddress', 'macid', 'deviceid'),
-        type: obtener('type', 'tipo')
-      };
+        if (!arr) return undefined;
 
-      agregar(entrada);
-    };
-
-    const recorrer = (valor) => {
-      if (!valor) return;
-      if (Array.isArray(valor)) {
-        valor.forEach(recorrer);
-        return;
-      }
-      if (typeof valor === 'object') {
-        obtenerDesdeObjeto(valor);
-        Object.values(valor).forEach(recorrer);
+        return arr.map(d => ({
+          category: normalizeValue(d?.category),
+          description: normalizeValue(d?.description),
+          model: normalizeValue(d?.model),
+          serialNumber: normalizeValue(d?.serialNumber || d?.serial),
+          macAddress: normalizeValue(d?.macAddress || d?.mac),
+          type: normalizeValue(d?.type)
+        }));
+      } catch {
+        return null;
       }
     };
 
-    try {
-      const parsed = JSON.parse(jsonStr);
-      recorrer(parsed);
-    } catch (err) {
-      // Ignorado: se buscará mediante expresiones regulares
+    const parsedDevices = tryParse();
+    if (Array.isArray(parsedDevices)) {
+      return parsedDevices;
     }
 
-    if (!resultados.length) {
-      const texto = String(jsonStr);
+    const pick = (key) => {
+      const regex = new RegExp(`"${key}"\\s*:\\s*"([^"\\]+)"`, 'i');
+      const match = s.match(regex);
+      return match ? match[1].trim() : '';
+    };
 
-      const macRegex = /(?:^|[\s,;\|])(?:mac|mac address|direcci[oó]n\s*mac|mac\s*id)\s*[:=\-]?\s*([0-9a-f]{2}(?:[:\-]?[0-9a-f]{2}){5,})/gi;
-      const serialRegex = /(?:^|[\s,;\|])(?:sn|serial|serie|nro\s*serie|numero\s*serie|n[uú]mero\s*serie)\s*[:=\-]?\s*([a-z0-9\-]{4,})/gi;
+    const fallback = {
+      category: pick('category'),
+      description: pick('description'),
+      model: pick('model'),
+      serialNumber: pick('serialNumber') || pick('serial'),
+      macAddress: pick('macAddress') || pick('mac'),
+      type: pick('type')
+    };
 
-      let match;
-      const macs = new Set();
-      while ((match = macRegex.exec(texto))) {
-        const mac = match[1]?.replace(/[^0-9a-f:]/gi, '').toUpperCase();
-        if (mac && !macs.has(mac)) {
-          macs.add(mac);
-          agregar({macAddress: mac});
-        }
-      }
-
-      const seriales = new Set();
-      while ((match = serialRegex.exec(texto))) {
-        const serial = normalizarValor(match[1]);
-        if (serial && !seriales.has(serial)) {
-          seriales.add(serial);
-          agregar({serialNumber: serial});
-        }
-      }
+    if (Object.values(fallback).some(Boolean)) {
+      return [fallback];
     }
 
-    return resultados;
+    return [];
   },
+
+  formatMac(mac) {
+    if (!mac) return '';
+    const hex = String(mac).replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+    if (hex.length !== 12) return String(mac).trim();
+    return hex.match(/.{1,2}/g).join(':');
+  },
+
   detectarSistema(numCaso) {
     const numStr = String(numCaso || '').trim();
     if (numStr.startsWith('8')) return 'OPEN';
@@ -401,6 +383,145 @@ const TextUtils = {
     return '';
   }
 };
+window.TextUtils = TextUtils;
+
+function buildEquiposFromSheet(rows) {
+  const equipos = [];
+  if (!Array.isArray(rows)) return equipos;
+
+  rows.forEach(row => {
+    if (!row || typeof row !== 'object') return;
+
+    const col = findDispositivosColumn(row);
+    const raw = (col && row[col])
+      || row['Informacion Dispositivos']
+      || row['Información Dispositivos']
+      || row['Informacion_Dispositivos']
+      || row['info_dispositivos']
+      || '';
+
+    if (!raw) return;
+
+    const dispositivos = TextUtils.parseDispositivosJSON(raw);
+    if (!Array.isArray(dispositivos) || !dispositivos.length) return;
+
+    const fecha = row['Fecha']
+      || row['Fecha de creación']
+      || row['Fecha/Hora de apertura']
+      || row['Fecha de inicio']
+      || '';
+
+    const zona = row['Zona/CAC']
+      || row['Zona Tecnica HFC']
+      || row['Zona Tecnica FTTH']
+      || row['Zona Tecnica']
+      || row['Zona']
+      || '';
+
+    const territorio = row['Territorio de servicio: Nombre'] || row['Territorio'] || '';
+
+    const caso = row['Número del caso']
+      || row['Numero del caso']
+      || row['Caso Externo']
+      || row['Caso']
+      || row['External Case Id']
+      || '';
+
+    const numeroOrden = row['Numero Orden']
+      || row['Número Orden']
+      || row['Número de cita']
+      || row['Numero de cita']
+      || row['Orden']
+      || row['Orden de trabajo']
+      || '';
+
+    const sistema = TextUtils.detectarSistema(caso);
+
+    const clean = (value) => {
+      if (value === null || value === undefined) return '';
+      return String(value).trim();
+    };
+
+    dispositivos.forEach(d => {
+      const mac = TextUtils.formatMac(d.macAddress || d.serialNumber);
+      const tipoValue = clean(d.type) || clean(d.description);
+      equipos.push({
+        Zona: zona || '',
+        Territorio: territorio || '',
+        Caso: caso || '',
+        Sistema: sistema || '',
+        SerialNumber: clean(d.serialNumber || d.serial),
+        MAC: mac || '',
+        Modelo: clean(d.model),
+        Tipo: tipoValue,
+        Marca: clean(d.category),
+        Categoria: clean(d.category),
+        Descripcion: clean(d.description),
+        Fecha: fecha || '',
+        NumeroOrden: numeroOrden || ''
+      });
+    });
+  });
+
+  return equipos;
+}
+
+function enrichRowWithDeviceInfo(row) {
+  if (!row || typeof row !== 'object') return row;
+
+  const needModelo = !row['Modelo'];
+  const needMac = !row['MAC'];
+  const needTipo = !row['Tipo'];
+
+  if (!(needModelo || needMac || needTipo)) return row;
+
+  const meta = row.__meta = row.__meta || {};
+  let device = ensureOrderDeviceMeta(row);
+
+  if (!device) {
+    const fallback = Array.isArray(meta.dispositivos) && meta.dispositivos.length
+      ? meta.dispositivos[0]
+      : null;
+    if (fallback) {
+      device = fallback;
+    }
+  }
+
+  if (!device) {
+    const col = findDispositivosColumn(row);
+    const raw = (col && row[col])
+      || row['Informacion Dispositivos']
+      || row['Información Dispositivos']
+      || row['Informacion_Dispositivos']
+      || row['info_dispositivos']
+      || '';
+
+    const parsed = TextUtils.parseDispositivosJSON(raw);
+    if (parsed.length) {
+      const normalizedList = parsed.map(normalizeDevice).filter(Boolean);
+      if (normalizedList.length) {
+        meta.dispositivos = normalizedList;
+        meta.device = normalizedList[0];
+        device = meta.device;
+      } else {
+        device = parsed[0];
+      }
+    }
+  }
+
+  if (!device) return row;
+
+  const modelo = device.model || device.Modelo || device.modelo || '';
+  const tipo = device.type || device.Tipo || device.technology || device.description || '';
+  const macCandidate = device.mac || device.MAC || device.macAddress || device.serialNumber || device.SerialNumber || '';
+  const formattedMac = TextUtils.formatMac(macCandidate);
+
+  if (needModelo && modelo) row['Modelo'] = modelo;
+  if (needTipo && tipo) row['Tipo'] = tipo;
+  if (needMac && formattedMac) row['MAC'] = formattedMac;
+
+  return row;
+}
 
 function normalizeEstado(estado) {
   if (!estado) return '';
@@ -1047,25 +1168,27 @@ class DataProcessor {
   
   processZones(rows) {
     const zoneGroups = new Map();
-    
+
     rows.forEach(r => {
-      const {zonaPrincipal, tipo} = this.getZonaPrincipal(r);
+      const order = enrichRowWithDeviceInfo(r);
+      ensureOrderDeviceMeta(order);
+      const {zonaPrincipal, tipo} = this.getZonaPrincipal(order);
       if (!zonaPrincipal) return;
-      
+
       if (!zoneGroups.has(zonaPrincipal)) {
         zoneGroups.set(zonaPrincipal, {
           zona: zonaPrincipal,
           tipo: tipo,
-          zonaHFC: r['Zona Tecnica HFC'] || r['Zona Tecnica'] || '',
-          zonaFTTH: r['Zona Tecnica FTTH'] || '',
-          territorio: r['Territorio de servicio: Nombre'] || r['Territorio'] || '',
+          zonaHFC: order['Zona Tecnica HFC'] || order['Zona Tecnica'] || '',
+          zonaFTTH: order['Zona Tecnica FTTH'] || '',
+          territorio: order['Territorio de servicio: Nombre'] || order['Territorio'] || '',
           ordenes: []
         });
       }
-      
-      zoneGroups.get(zonaPrincipal).ordenes.push(r);
+
+      zoneGroups.get(zonaPrincipal).ordenes.push(order);
     });
-    
+
     return Array.from(zoneGroups.values());
   }
   
@@ -1959,44 +2082,39 @@ const UIRenderer = {
   },
   
   renderEquipos(ordenes) {
+    const equipos = buildEquiposFromSheet(ordenes);
+    if (!equipos.length) {
+      return '<div class="loading-message"><p>⚠️ No se encontraron equipos en las órdenes.</p></div>';
+    }
+
     const grupos = new Map();
     const territorios = new Set();
-
-    ordenes.forEach((o) => {
-      const zona = o['Zona Tecnica HFC'] || o['Zona Tecnica FTTH'] || '';
-      const territorio = o['Territorio de servicio: Nombre'] || '';
-      const numCaso = o['Número del caso'] || o['Caso Externo'] || '';
-      const sistema = TextUtils.detectarSistema(numCaso);
-
-      const colInfo = findDispositivosColumn(o);
-      const infoDispositivos = colInfo ? o[colInfo] : '';
-
-      const dispositivos = TextUtils.parseDispositivosJSON(infoDispositivos);
-      dispositivos.forEach(d => {
-        const item = {
-          zona,
-          territorio,
-          numCaso,
-          sistema,
-          serialNumber: d.serialNumber,
-          macAddress: d.macAddress,
-          tipo: d.description,
-          marca: d.category,
-          modelo: d.model
-        };
-        if (!grupos.has(zona)) grupos.set(zona, []);
-        grupos.get(zona).push(item);
-        if (territorio) territorios.add(territorio);
-      });
-    });
-
     const modelos = new Set();
     const marcas = new Set();
-    grupos.forEach(arr => {
-      arr.forEach(e => {
-        if (e.modelo) modelos.add(e.modelo);
-        if (e.marca) marcas.add(e.marca);
-      });
+
+    equipos.forEach(item => {
+      const zona = item.Zona || '';
+      const entry = {
+        zona,
+        territorio: item.Territorio || '',
+        numCaso: item.Caso || '',
+        sistema: item.Sistema || '',
+        serialNumber: item.SerialNumber || '',
+        macAddress: item.MAC || '',
+        tipo: item.Tipo || '',
+        marca: item.Marca || item.Categoria || '',
+        modelo: item.Modelo || '',
+        descripcion: item.Descripcion || '',
+        fecha: item.Fecha || '',
+        numeroOrden: item.NumeroOrden || ''
+      };
+
+      if (!grupos.has(zona)) grupos.set(zona, []);
+      grupos.get(zona).push(entry);
+
+      if (entry.territorio) territorios.add(entry.territorio);
+      if (entry.modelo) modelos.add(entry.modelo);
+      if (entry.marca) marcas.add(entry.marca);
     });
 
     const zonas = Array.from(grupos.keys()).sort((a, b) => a.localeCompare(b));
@@ -2007,7 +2125,7 @@ const UIRenderer = {
     if (!window.equiposOpen) window.equiposOpen = new Set();
 
     let html = '<div class="equipos-filters">';
-    
+
     html += '<div class="filter-group">';
     html += '<div class="filter-label">Filtrar por Modelo</div>';
     html += '<select id="filterEquipoModelo" class="input-select" multiple size="3" onchange="applyEquiposFilters()">';
@@ -2045,14 +2163,14 @@ const UIRenderer = {
     html += '</div>';
     html += '</div>';
 
-    let gruposFiltrados = new Map();
+    const gruposFiltrados = new Map();
     grupos.forEach((arr, zona) => {
       let filtrado = arr;
-      
+
       if (Filters.equipoModelo.length > 0) {
         filtrado = filtrado.filter(e => Filters.equipoModelo.includes(e.modelo));
       }
-      
+
       if (Filters.equipoMarca) {
         filtrado = filtrado.filter(e => e.marca === Filters.equipoMarca);
       }
@@ -2060,15 +2178,15 @@ const UIRenderer = {
       if (Filters.equipoTerritorio) {
         filtrado = filtrado.filter(e => e.territorio === Filters.equipoTerritorio);
       }
-      
+
       if (filtrado.length > 0) {
         gruposFiltrados.set(zona, filtrado);
       }
     });
 
     const zonasFiltradas = Array.from(gruposFiltrados.keys()).sort((a, b) => a.localeCompare(b));
-    
-    if (zonasFiltradas.length === 0) {
+
+    if (!zonasFiltradas.length) {
       html += '<div class="loading-message"><p>No hay equipos que coincidan con los filtros seleccionados</p></div>';
       return html;
     }
@@ -2080,11 +2198,11 @@ const UIRenderer = {
     zonasFiltradas.forEach((z) => {
       const arr = gruposFiltrados.get(z) || [];
       const open = window.equiposOpen.has(z);
-      html += `<tr class="clickable" onclick="toggleEquiposGrupo('${z.replace(/'/g, "\\'")}')">
-        <td><strong>${z || '-'}</strong></td>
-        <td class="number">${arr.length}</td>
-        <td><button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="event.stopPropagation(); exportEquiposGrupoExcel('${z.replace(/'/g, "\\'")}', true)">📥 Exportar</button></td>
-      </tr>`;
+      html += `<tr class="clickable" onclick="toggleEquiposGrupo('${z.replace(/'/g, "\'")}')">`;
+      html += `<td><strong>${z || '-'}</strong></td>`;
+      html += `<td class="number">${arr.length}</td>`;
+      html += `<td><button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="event.stopPropagation(); exportEquiposGrupoExcel('${z.replace(/'/g, "\'")}', true)">📥 Exportar</button></td>`;
+      html += '</tr>';
 
       if (open) {
         html += `<tr><td colspan="3">`;
@@ -2094,15 +2212,15 @@ const UIRenderer = {
         arr.slice(0, 1000).forEach(e => {
           const badge = e.sistema === 'OPEN' ? '<span class="badge badge-open">OPEN</span>'
                        : e.sistema === 'FAN' ? '<span class="badge badge-fan">FAN</span>' : '';
-          html += `<tr>
-            <td style="font-family:monospace">${e.numCaso || ''}</td>
-            <td>${badge}</td>
-            <td style="font-family:monospace">${e.serialNumber || ''}</td>
-            <td style="font-family:monospace">${e.macAddress || ''}</td>
-            <td>${e.tipo || ''}</td>
-            <td>${e.marca || ''}</td>
-            <td>${e.modelo || ''}</td>
-          </tr>`;
+          html += `<tr>`;
+          html += `<td style="font-family:monospace">${e.numCaso || ''}</td>`;
+          html += `<td>${badge}</td>`;
+          html += `<td style="font-family:monospace">${e.serialNumber || ''}</td>`;
+          html += `<td style="font-family:monospace">${e.macAddress || ''}</td>`;
+          html += `<td>${e.tipo || ''}</td>`;
+          html += `<td>${e.marca || ''}</td>`;
+          html += `<td>${e.modelo || ''}</td>`;
+          html += '</tr>';
         });
         html += '</tbody></table></div></div>';
         html += `</td></tr>`;
@@ -2111,10 +2229,11 @@ const UIRenderer = {
 
     html += '</tbody></table></div></div>';
     html += `<p style="text-align:center;margin-top:12px;color:var(--text-secondary)">Total: ${zonasFiltradas.length} zonas • Click para expandir/colapsar</p>`;
-    
+
     window.equiposPorZona = gruposFiltrados;
     window.equiposPorZonaCompleto = grupos;
-    
+    window.equiposListado = equipos;
+
     return html;
   }
 };
@@ -2418,11 +2537,25 @@ function exportEquiposGrupoExcel(zona, useFiltered = false){
   
   const arr = source.get(zona) || [];
   if (!arr.length) return toast('No hay equipos en esa zona');
-  
+
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(arr);
+  const exportRows = arr.map(e => ({
+    Zona: e.zona || zona || '',
+    Territorio: e.territorio || '',
+    Caso: e.numCaso || '',
+    Sistema: e.sistema || '',
+    Serial: e.serialNumber || '',
+    MAC: e.macAddress || '',
+    Tipo: e.tipo || '',
+    Marca: e.marca || '',
+    Modelo: e.modelo || '',
+    Descripcion: e.descripcion || '',
+    Fecha: e.fecha || '',
+    NumeroOrden: e.numeroOrden || ''
+  }));
+  const ws = XLSX.utils.json_to_sheet(exportRows);
   XLSX.utils.book_append_sheet(wb, ws, `Equipos_${zona || 'NA'}`);
-  
+
   const filterInfo = useFiltered && (Filters.equipoModelo.length > 0 || Filters.equipoMarca || Filters.equipoTerritorio)
     ? `_filtrado`
     : '';
@@ -2628,9 +2761,14 @@ async function loadFile(e, tipo) {
 function processData() {
   const merged = dataProcessor.merge();
   if (!merged.length) return;
-  
+
+  merged.forEach(order => {
+    enrichRowWithDeviceInfo(order);
+    ensureOrderDeviceMeta(order);
+  });
+
   const daysWindow = parseInt(document.getElementById('daysWindow').value);
-  
+
   const zones = dataProcessor.processZones(merged);
   allZones = dataProcessor.analyzeZones(zones, daysWindow);
   allCMTS = dataProcessor.analyzeCMTS(allZones);
