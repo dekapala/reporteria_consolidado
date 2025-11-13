@@ -2121,17 +2121,18 @@ function abrirEdificioDetalle(idx) {
   </div>
   `;
   
-  // Abrir modal
-  const modal = document.getElementById('detailModal');
-  const modalTitle = document.getElementById('modalTitle');
-  const modalBody = document.getElementById('modalBody');
-  
-  if (modal && modalTitle && modalBody) {
-    modalTitle.textContent = `🏢 Edificio: ${edificio.direccion}`;
-    modalBody.innerHTML = html;
-    modal.style.display = 'block';
-  }
+
+// Abrir modal (IDs correctos)
+const backdrop  = document.getElementById('edificioBackdrop');
+const modalTitle = document.getElementById('edificioModalTitle');
+const modalBody  = document.getElementById('edificioModalBody');
+
+if (backdrop && modalTitle && modalBody) {
+  modalTitle.textContent = `🏢 Edificio: ${edificio.direccion}`;
+  modalBody.innerHTML = html;
+  backdrop.style.display = 'block';   // <- se muestra el modal
 }
+
 
 
 
