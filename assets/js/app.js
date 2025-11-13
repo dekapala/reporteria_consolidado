@@ -63,6 +63,12 @@ const TerritorioUtils = {
 
 function stripAccents(s=''){return s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
 
+function on(id, evt, fn){
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(evt, fn);
+  return el;
+}
+
 function extractDiagnosticoTecnico(order){
   if (!order) return '';
   const metaValue = order.__meta?.diagnosticoTecnico;
@@ -157,28 +163,44 @@ const TextUtils = {
     const firmas = new Set();
 
     const normalizarClave = (clave) => stripAccents(String(clave || '')).toLowerCase().replace(/[^a-z0-9]/g, '');
-    const normalizarValor = (valor) => {
+    const normalizarTexto = (valor) => {
       if (valor === null || valor === undefined) return '';
       return String(valor).trim();
     };
+    const limpiarMac = (valor) => {
+      const texto = normalizarTexto(valor);
+      if (!texto) return '';
+      const soloHex = texto.replace(/[^0-9a-f]/gi, '');
+      if (soloHex.length >= 12) {
+        const normalizado = soloHex.toUpperCase();
+        const parejas = normalizado.match(/.{1,2}/g);
+        return parejas ? parejas.join(':') : normalizado;
+      }
+      return texto.toUpperCase();
+    };
+    const limpiarSerial = (valor) => normalizarTexto(valor).toUpperCase();
 
     const agregar = (entrada = {}) => {
-      const limpio = {
-        category: normalizarValor(entrada.category),
-        description: normalizarValor(entrada.description),
-        model: normalizarValor(entrada.model),
-        serialNumber: normalizarValor(entrada.serialNumber),
-        macAddress: normalizarValor(entrada.macAddress),
-        type: normalizarValor(entrada.type)
+      const macAddress = limpiarMac(entrada.macAddress ?? entrada.mac ?? '');
+      const mac = limpiarMac(entrada.mac ?? entrada.macAddress ?? '');
+      const modelo = normalizarTexto(entrada.modelo ?? entrada.model ?? entrada.description ?? '');
+      const marca = normalizarTexto(entrada.marca ?? entrada.brand ?? entrada.fabricante ?? entrada.category ?? '');
+      const serial = limpiarSerial(entrada.serial ?? entrada.serialNumber ?? '');
+
+      if (!mac && !macAddress && !serial && !modelo && !marca) return;
+
+      const normalizado = {
+        mac,
+        macAddress: macAddress || mac,
+        modelo,
+        marca,
+        serial
       };
 
-      const tieneDatosClave = limpio.macAddress || limpio.serialNumber || limpio.model || limpio.description;
-      if (!tieneDatosClave) return;
-
-      const firma = `${limpio.macAddress}||${limpio.serialNumber}||${limpio.model}||${limpio.description}`;
+      const firma = `${normalizado.macAddress || ''}||${normalizado.mac || ''}||${normalizado.serial || ''}||${normalizado.modelo || ''}||${normalizado.marca || ''}`;
       if (firmas.has(firma)) return;
       firmas.add(firma);
-      resultados.push(limpio);
+      resultados.push(normalizado);
     };
 
     const obtenerDesdeObjeto = (obj) => {
@@ -193,20 +215,21 @@ const TextUtils = {
         for (const variante of variantes) {
           const clave = normalizarClave(variante);
           if (Object.prototype.hasOwnProperty.call(mapa, clave)) {
-            const valor = normalizarValor(mapa[clave]);
-            if (valor) return valor;
+            const valor = mapa[clave];
+            if (valor !== undefined && valor !== null && String(valor).trim()) {
+              return valor;
+            }
           }
         }
         return '';
       };
 
       const entrada = {
-        category: obtener('category', 'categoria'),
-        description: obtener('description', 'descripcion', 'detalle'),
-        model: obtener('model', 'modelo'),
-        serialNumber: obtener('serialnumber', 'serial', 'serie', 'numerodeserie', 'nroserie', 'sn', 'serialid'),
-        macAddress: obtener('macaddress', 'mac', 'macaddr', 'direccionmac', 'direccionmacaddress', 'macid', 'deviceid'),
-        type: obtener('type', 'tipo')
+        mac: obtener('mac', 'macaddr', 'deviceid'),
+        macAddress: obtener('macaddress', 'direccionmac', 'direccionmacaddress', 'macid'),
+        modelo: obtener('modelo', 'model', 'descripcion', 'description', 'detalle'),
+        marca: obtener('marca', 'brand', 'fabricante', 'proveedor', 'categoria', 'category'),
+        serial: obtener('serial', 'serialnumber', 'serie', 'numerodeserie', 'nroserie', 'sn', 'serialid')
       };
 
       agregar(entrada);
@@ -234,26 +257,16 @@ const TextUtils = {
     if (!resultados.length) {
       const texto = String(jsonStr);
 
-      const macRegex = /(?:^|[\s,;\|])(?:mac|mac address|direcci[oó]n\s*mac|mac\s*id)\s*[:=\-]?\s*([0-9a-f]{2}(?:[:\-]?[0-9a-f]{2}){5,})/gi;
-      const serialRegex = /(?:^|[\s,;\|])(?:sn|serial|serie|nro\s*serie|numero\s*serie|n[uú]mero\s*serie)\s*[:=\-]?\s*([a-z0-9\-]{4,})/gi;
-
-      let match;
-      const macs = new Set();
-      while ((match = macRegex.exec(texto))) {
-        const mac = match[1]?.replace(/[^0-9a-f:]/gi, '').toUpperCase();
-        if (mac && !macs.has(mac)) {
-          macs.add(mac);
-          agregar({macAddress: mac});
-        }
+      const macRegex = /([0-9a-f]{2}(?:[:\-]?[0-9a-f]{2}){5})/gi;
+      let macMatch;
+      while ((macMatch = macRegex.exec(texto))) {
+        agregar({macAddress: macMatch[1]});
       }
 
-      const seriales = new Set();
-      while ((match = serialRegex.exec(texto))) {
-        const serial = normalizarValor(match[1]);
-        if (serial && !seriales.has(serial)) {
-          seriales.add(serial);
-          agregar({serialNumber: serial});
-        }
+      const serialRegex = /(?:serie|serial|sn|n[uú]mero\s*de\s*serie|nro\s*serie)\s*[:=\-]?\s*([a-z0-9\-\/]{4,})/gi;
+      let serialMatch;
+      while ((serialMatch = serialRegex.exec(texto))) {
+        agregar({serial: serialMatch[1]});
       }
     }
 
@@ -1834,16 +1847,22 @@ const UIRenderer = {
 
       const dispositivos = TextUtils.parseDispositivosJSON(infoDispositivos);
       dispositivos.forEach(d => {
+        const serialNumber = d.serial || d.serialNumber || '';
+        const macAddress = d.macAddress || d.mac || '';
+        const modelo = d.modelo || d.model || d.description || '';
+        const marca = d.marca || d.brand || d.category || '';
+        const tipo = d.tipo || d.description || modelo;
+
         const item = {
           zona,
           territorio,
           numCaso,
           sistema,
-          serialNumber: d.serialNumber,
-          macAddress: d.macAddress,
-          tipo: d.description,
-          marca: d.category,
-          modelo: d.model
+          serialNumber,
+          macAddress,
+          tipo,
+          marca,
+          modelo
         };
         if (!grupos.has(zona)) grupos.set(zona, []);
         grupos.get(zona).push(item);
@@ -2202,8 +2221,8 @@ function collectDeviceIdentifiers(order, meta, fallbackMac){
   if (meta && Array.isArray(meta.dispositivos)) {
     meta.dispositivos.forEach(d => {
       if (!d) return;
-      const macVal = d.macAddress || d.mac;
-      const serialVal = d.serialNumber || d.serial;
+      const macVal = d.macAddress || d.mac || d.macaddress;
+      const serialVal = d.serial || d.serialNumber;
       pushEntry(macVal, serialVal);
     });
   }
@@ -2267,11 +2286,10 @@ function buildOrderExportRow(order, zoneInfo){
 
   const macFromFields = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
   const deviceInfo = collectDeviceIdentifiers(order, meta, macFromFields);
+  const firstDevice = Array.isArray(meta.dispositivos) && meta.dispositivos.length ? meta.dispositivos[0] : null;
+  const metaMac = firstDevice ? (firstDevice.macAddress || firstDevice.mac || '') : '';
 
-  let mac = macFromFields || '';
-  if (!mac) {
-    mac = deviceInfo.firstMac || deviceInfo.firstSerial || '';
-  }
+  let mac = macFromFields || metaMac || deviceInfo.firstMac || deviceInfo.firstSerial || '';
 
   const macCell = deviceInfo.summary || mac || '';
 
@@ -2407,56 +2425,55 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
-  document.getElementById('fileConsolidado1').addEventListener('change', e => loadFile(e, 1));
-  document.getElementById('fileConsolidado2').addEventListener('change', e => loadFile(e, 2));
-  document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
-  document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
-  
+  on('fileConsolidado1', 'change', e => loadFile(e, 1));
+  on('fileConsolidado2', 'change', e => loadFile(e, 2));
+  on('fileNodos', 'change', e => loadFile(e, 3));
+  on('fileFMS', 'change', e => loadFile(e, 4));
+
   const filterCatec = document.getElementById('filterCATEC');
   const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
 
   if (filterCatec && filterExcludeCatec) {
-    filterCatec.addEventListener('change', e => {
+    on('filterCATEC', 'change', e => {
       if (e.target.checked) {
         filterExcludeCatec.checked = false;
       }
       applyFilters();
     });
 
-    filterExcludeCatec.addEventListener('change', e => {
+    on('filterExcludeCATEC', 'change', e => {
       if (e.target.checked) {
         filterCatec.checked = false;
       }
       applyFilters();
     });
   }
-  document.getElementById('showAllStates').addEventListener('change', applyFilters);
-  document.getElementById('filterFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
+  on('showAllStates', 'change', applyFilters);
+  on('filterFTTH', 'change', e => {
+    if (e.target.checked) {
+      const exclude = document.getElementById('filterExcludeFTTH');
+      if (exclude) exclude.checked = false;
+    }
     applyFilters();
   });
-  document.getElementById('filterExcludeFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterFTTH').checked = false;
+  on('filterExcludeFTTH', 'change', e => {
+    if (e.target.checked) {
+      const ftth = document.getElementById('filterFTTH');
+      if (ftth) ftth.checked = false;
+    }
     applyFilters();
   });
-  document.getElementById('filterNodoEstado').addEventListener('change', applyFilters);
-  document.getElementById('filterCMTS').addEventListener('change', applyFilters);
-  document.getElementById('daysWindow').addEventListener('change', applyFilters);
-  document.getElementById('filterTerritorio').addEventListener('change', applyFilters);
-  document.getElementById('filterSistema').addEventListener('change', applyFilters);
-  document.getElementById('filterAlarma').addEventListener('change', applyFilters);
-  document.getElementById('quickSearch').addEventListener('input', debounce(applyFilters, 300));
-  document.getElementById('ordenarPorIngreso').addEventListener('change', applyFilters);
+  on('filterNodoEstado', 'change', applyFilters);
+  on('filterCMTS', 'change', applyFilters);
+  on('daysWindow', 'change', applyFilters);
+  on('filterTerritorio', 'change', applyFilters);
+  on('filterSistema', 'change', applyFilters);
+  on('filterAlarma', 'change', applyFilters);
+  on('quickSearch', 'input', debounce(applyFilters, 300));
+  on('ordenarPorIngreso', 'change', applyFilters);
 
-  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
-  if (zoneFilterSearch) {
-    zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
-  }
-
-  const zoneFilterOptions = document.getElementById('zoneFilterOptions');
-  if (zoneFilterOptions) {
-    zoneFilterOptions.addEventListener('change', onZoneOptionChange);
-  }
+  on('zoneFilterSearch', 'input', onZoneFilterSearch);
+  on('zoneFilterOptions', 'change', onZoneOptionChange);
 
   document.addEventListener('click', handleZoneFilterOutsideClick);
 }

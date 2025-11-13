@@ -120,28 +120,44 @@ console.log('🚀 Panel v5.0 COMPLETO - Sparklines normalizadas + histórico del
       const firmas = new Set();
 
       const normalizarClave = (clave) => stripAccents(String(clave || '')).toLowerCase().replace(/[^a-z0-9]/g, '');
-      const normalizarValor = (valor) => {
+      const normalizarTexto = (valor) => {
         if (valor === null || valor === undefined) return '';
         return String(valor).trim();
       };
+      const limpiarMac = (valor) => {
+        const texto = normalizarTexto(valor);
+        if (!texto) return '';
+        const soloHex = texto.replace(/[^0-9a-f]/gi, '');
+        if (soloHex.length >= 12) {
+          const normalizado = soloHex.toUpperCase();
+          const parejas = normalizado.match(/.{1,2}/g);
+          return parejas ? parejas.join(':') : normalizado;
+        }
+        return texto.toUpperCase();
+      };
+      const limpiarSerial = (valor) => normalizarTexto(valor).toUpperCase();
 
       const agregar = (entrada = {}) => {
-        const limpio = {
-          category: normalizarValor(entrada.category),
-          description: normalizarValor(entrada.description),
-          model: normalizarValor(entrada.model),
-          serialNumber: normalizarValor(entrada.serialNumber),
-          macAddress: normalizarValor(entrada.macAddress),
-          type: normalizarValor(entrada.type)
+        const macAddress = limpiarMac(entrada.macAddress ?? entrada.mac ?? '');
+        const mac = limpiarMac(entrada.mac ?? entrada.macAddress ?? '');
+        const modelo = normalizarTexto(entrada.modelo ?? entrada.model ?? entrada.description ?? '');
+        const marca = normalizarTexto(entrada.marca ?? entrada.brand ?? entrada.fabricante ?? entrada.category ?? '');
+        const serial = limpiarSerial(entrada.serial ?? entrada.serialNumber ?? '');
+
+        if (!mac && !macAddress && !serial && !modelo && !marca) return;
+
+        const normalizado = {
+          mac,
+          macAddress: macAddress || mac,
+          modelo,
+          marca,
+          serial
         };
 
-        const tieneDatosClave = limpio.macAddress || limpio.serialNumber || limpio.model || limpio.description;
-        if (!tieneDatosClave) return;
-
-        const firma = `${limpio.macAddress}||${limpio.serialNumber}||${limpio.model}||${limpio.description}`;
+        const firma = `${normalizado.macAddress || ''}||${normalizado.mac || ''}||${normalizado.serial || ''}||${normalizado.modelo || ''}||${normalizado.marca || ''}`;
         if (firmas.has(firma)) return;
         firmas.add(firma);
-        resultados.push(limpio);
+        resultados.push(normalizado);
       };
 
       const obtenerDesdeObjeto = (obj) => {
@@ -156,20 +172,21 @@ console.log('🚀 Panel v5.0 COMPLETO - Sparklines normalizadas + histórico del
           for (const variante of variantes) {
             const clave = normalizarClave(variante);
             if (Object.prototype.hasOwnProperty.call(mapa, clave)) {
-              const valor = normalizarValor(mapa[clave]);
-              if (valor) return valor;
+              const valor = mapa[clave];
+              if (valor !== undefined && valor !== null && String(valor).trim()) {
+                return valor;
+              }
             }
           }
           return '';
         };
 
         const entrada = {
-          category: obtener('category', 'categoria'),
-          description: obtener('description', 'descripcion', 'detalle'),
-          model: obtener('model', 'modelo'),
-          serialNumber: obtener('serialnumber', 'serial', 'serie', 'numerodeserie', 'nroserie', 'sn', 'serialid'),
-          macAddress: obtener('macaddress', 'mac', 'macaddr', 'direccionmac', 'direccionmacaddress', 'macid', 'deviceid'),
-          type: obtener('type', 'tipo')
+          mac: obtener('mac', 'macaddr', 'deviceid'),
+          macAddress: obtener('macaddress', 'direccionmac', 'direccionmacaddress', 'macid'),
+          modelo: obtener('modelo', 'model', 'descripcion', 'description', 'detalle'),
+          marca: obtener('marca', 'brand', 'fabricante', 'proveedor', 'categoria', 'category'),
+          serial: obtener('serial', 'serialnumber', 'serie', 'numerodeserie', 'nroserie', 'sn', 'serialid')
         };
 
         agregar(entrada);
@@ -197,26 +214,16 @@ console.log('🚀 Panel v5.0 COMPLETO - Sparklines normalizadas + histórico del
       if (!resultados.length) {
         const texto = String(jsonStr);
 
-        const macRegex = /(?:^|[\s,;\|])(?:mac|mac address|direcci[oó]n\s*mac|mac\s*id)\s*[:=\-]?\s*([0-9a-f]{2}(?:[:\-]?[0-9a-f]{2}){5,})/gi;
-        const serialRegex = /(?:^|[\s,;\|])(?:sn|serial|serie|nro\s*serie|numero\s*serie|n[uú]mero\s*serie)\s*[:=\-]?\s*([a-z0-9\-]{4,})/gi;
-
-        let match;
-        const macs = new Set();
-        while ((match = macRegex.exec(texto))) {
-          const mac = match[1]?.replace(/[^0-9a-f:]/gi, '').toUpperCase();
-          if (mac && !macs.has(mac)) {
-            macs.add(mac);
-            agregar({macAddress: mac});
-          }
+        const macRegex = /([0-9a-f]{2}(?:[:\-]?[0-9a-f]{2}){5})/gi;
+        let macMatch;
+        while ((macMatch = macRegex.exec(texto))) {
+          agregar({macAddress: macMatch[1]});
         }
 
-        const seriales = new Set();
-        while ((match = serialRegex.exec(texto))) {
-          const serial = normalizarValor(match[1]);
-          if (serial && !seriales.has(serial)) {
-            seriales.add(serial);
-            agregar({serialNumber: serial});
-          }
+        const serialRegex = /(?:serie|serial|sn|n[uú]mero\s*de\s*serie|nro\s*serie)\s*[:=\-]?\s*([a-z0-9\-\/]{4,})/gi;
+        let serialMatch;
+        while ((serialMatch = serialRegex.exec(texto))) {
+          agregar({serial: serialMatch[1]});
         }
       }
 
