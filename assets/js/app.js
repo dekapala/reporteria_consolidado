@@ -122,34 +122,42 @@ function normalizeMac(mac=''){
   return clean.match(/.{1,2}/g).join(':');
 }
 
+function normalizeDevice(device){
+  if (!device || typeof device !== 'object') return null;
+  const mapValue = (value) => (value === null || value === undefined) ? '' : String(value).trim();
+
+  const macRaw = device.mac || device.macAddress || device.mac_address || device.MAC || device.macAddressRaw || '';
+  const macNormalized = normalizeMac(macRaw);
+  const macValue = macNormalized || mapValue(macRaw);
+  const serialNumber = mapValue(device.serialNumber || device.serial || device.serie || device.sn || device.numeroSerie);
+  const model = mapValue(device.model || device.modelo);
+  const category = mapValue(device.category || device.brand || device.marca);
+  const brand = mapValue(device.brand || device.category || device.marca || category);
+  const technology = mapValue(device.technology || device.description || device.detalle);
+  const type = mapValue(device.type || device.tipo);
+
+  if (!(macValue || serialNumber || model || category || technology || type || brand)) {
+    return null;
+  }
+
+  return {
+    macAddress: macValue,
+    serialNumber,
+    model,
+    category,
+    technology,
+    type,
+    brand,
+    mac: macValue
+  };
+}
+
 function pickPreferredDevice(devs=[]){
   if (!Array.isArray(devs) || !devs.length) return null;
 
-  const mapValue = (value) => {
-    if (value === null || value === undefined) return '';
-    const str = String(value).trim();
-    return str;
-  };
-
-  const normalizedDevices = devs.map(dev => {
-    if (!dev || typeof dev !== 'object') return null;
-    const brand = mapValue(dev.brand || dev.category || dev.marca);
-    const technology = mapValue(dev.technology || dev.description || dev.detalle);
-    const model = mapValue(dev.model || dev.modelo);
-    const macRaw = dev.mac || dev.macAddress || dev.mac_address || dev.MAC;
-    const mac = normalizeMac(macRaw) || mapValue(macRaw);
-    const type = mapValue(dev.type || dev.tipo);
-
-    if (!(brand || technology || model || mac || type)) return null;
-
-    return {
-      brand,
-      technology,
-      model,
-      mac,
-      type
-    };
-  }).filter(Boolean);
+  const normalizedDevices = devs
+    .map(normalizeDevice)
+    .filter(Boolean);
 
   if (!normalizedDevices.length) return null;
 
@@ -165,13 +173,12 @@ function pickPreferredDevice(devs=[]){
 function ensureOrderDeviceMeta(order){
   if (!order || typeof order !== 'object') return null;
 
-  if (!order.__meta) order.__meta = {};
-  if (order.__meta.device) return order.__meta.device;
+  const meta = order.__meta = order.__meta || {};
 
   let dispositivos = [];
 
-  if (Array.isArray(order.__meta.dispositivos) && order.__meta.dispositivos.length) {
-    dispositivos = order.__meta.dispositivos;
+  if (Array.isArray(meta.dispositivos) && meta.dispositivos.length) {
+    dispositivos = meta.dispositivos;
   } else {
     const colInfo = findDispositivosColumn(order);
     if (colInfo && order[colInfo]) {
@@ -180,51 +187,15 @@ function ensureOrderDeviceMeta(order){
   }
 
   const normalizedDevices = Array.isArray(dispositivos)
-    ? dispositivos.map(dev => {
-        if (!dev || typeof dev !== 'object') return null;
-        const mapValue = (val) => val === null || val === undefined ? '' : String(val).trim();
-        const macAddress = normalizeMac(dev.macAddress || dev.mac || dev.mac_address || dev.MAC) || mapValue(dev.macAddress || dev.mac);
-        const serialNumber = mapValue(dev.serialNumber || dev.serial || dev.serie);
-        const model = mapValue(dev.model || dev.modelo);
-        const category = mapValue(dev.category || dev.brand || dev.marca);
-        const technology = mapValue(dev.technology || dev.description || dev.detalle);
-        const type = mapValue(dev.type || dev.tipo);
-        const brand = mapValue(dev.brand || dev.category || dev.marca || category);
-
-        if (!(macAddress || serialNumber || model || category || technology || type || brand)) {
-          return null;
-        }
-
-        return {
-          macAddress,
-          serialNumber,
-          model,
-          category,
-          technology,
-          type,
-          brand,
-          mac: macAddress
-        };
-      }).filter(Boolean)
+    ? dispositivos.map(normalizeDevice).filter(Boolean)
     : [];
 
-  order.__meta.dispositivos = normalizedDevices;
-  dispositivos = normalizedDevices;
+  meta.dispositivos = normalizedDevices;
 
-  const device = pickPreferredDevice(dispositivos) || null;
-  if (device && Array.isArray(dispositivos) && dispositivos.length) {
-    const [first] = dispositivos;
-    if (device !== first) {
-      order.__meta.dispositivos = [device, ...dispositivos.filter(d => d !== device)];
-    }
-  }
-  if (device) {
-    order.__meta.device = device;
-    return device;
-  }
+  const device = pickPreferredDevice(normalizedDevices);
+  meta.device = device || null;
 
-  order.__meta.device = null;
-  return null;
+  return meta.device;
 }
 
 const DateUtils = {
@@ -879,51 +850,65 @@ class DataProcessor {
     try {
       const buffer = await readFileAsUint8Array(file);
       const decoder = new TextDecoder('utf-8');
-      const text = decoder.decode(buffer);
-      const lines = text.split('\n').filter(l => l.trim());
+      const text = decoder.decode(buffer || new Uint8Array());
 
-      if (lines.length < 2) {
+      if (!text.trim()) {
         return {success: false, error: 'CSV vacío'};
       }
-      
-      const parseCSVLine = (line) => {
-        const result = [];
-        let current = '';
-        let inQuotes = false;
-        
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          
-          if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if (char === ',' && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-          } else {
-            current += char;
-          }
-        }
-        result.push(current.trim());
-        return result;
-      };
-      
-      const headers = parseCSVLine(lines[0]);
+
+      const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const rows = [];
-      
-      for (let i = 1; i < lines.length; i++) {
-        const values = parseCSVLine(lines[i]);
+      let currentField = '';
+      let currentRow = [];
+      let inQuotes = false;
+
+      for (let i = 0; i < normalizedText.length; i++) {
+        const char = normalizedText[i];
+
+        if (char === '"') {
+          if (inQuotes && normalizedText[i + 1] === '"') {
+            currentField += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          currentRow.push(currentField.trim());
+          currentField = '';
+        } else if (char === '\n' && !inQuotes) {
+          currentRow.push(currentField.trim());
+          rows.push(currentRow);
+          currentRow = [];
+          currentField = '';
+        } else {
+          currentField += char;
+        }
+      }
+
+      if (currentField.length || currentRow.length) {
+        currentRow.push(currentField.trim());
+        rows.push(currentRow);
+      }
+
+      if (rows.length < 2) {
+        return {success: false, error: 'CSV vacío'};
+      }
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1).filter(r => r.some(cell => cell !== ''));
+      const mappedRows = dataRows.map(values => {
         const obj = {};
         headers.forEach((h, idx) => {
           obj[h] = values[idx] || '';
         });
-        rows.push(obj);
-      }
-      
-      console.log(`✅ CSV Alarmas: ${rows.length} alarmas leídas`);
-      this.fmsData = rows;
+        return obj;
+      });
+
+      console.log(`✅ CSV Alarmas: ${mappedRows.length} alarmas leídas`);
+      this.fmsData = mappedRows;
       this.processFMS();
-      
-      return {success: true, rows: rows.length};
+
+      return {success: true, rows: mappedRows.length};
     } catch (e) {
       console.error('Error loading CSV:', e);
       return {success: false, error: e.message};
@@ -2401,37 +2386,35 @@ function setupEventListeners() {
   on('fileConsolidado2', 'change', e => loadFile(e, 2));
   on('fileNodos', 'change', e => loadFile(e, 3));
   on('fileFMS', 'change', e => loadFile(e, 4));
-  
+
   const filterCatec = document.getElementById('filterCATEC');
   const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
+  on('filterCATEC', 'change', e => {
+    if (e.target.checked && filterExcludeCatec) {
+      filterExcludeCatec.checked = false;
+    }
+    applyFilters();
+  });
+  on('filterExcludeCATEC', 'change', e => {
+    if (e.target.checked && filterCatec) {
+      filterCatec.checked = false;
+    }
+    applyFilters();
+  });
 
-  if (filterCatec && filterExcludeCatec) {
-    filterCatec.addEventListener('change', e => {
-      if (e.target.checked) {
-        filterExcludeCatec.checked = false;
-      }
-      applyFilters();
-    });
-
-    filterExcludeCatec.addEventListener('change', e => {
-      if (e.target.checked) {
-        filterCatec.checked = false;
-      }
-      applyFilters();
-    });
-  }
   on('showAllStates', 'change', applyFilters);
+
+  const filterFTTH = document.getElementById('filterFTTH');
+  const filterExcludeFTTH = document.getElementById('filterExcludeFTTH');
   on('filterFTTH', 'change', e => {
-    if (e.target.checked) {
-      const exclude = document.getElementById('filterExcludeFTTH');
-      if (exclude) exclude.checked = false;
+    if (e.target.checked && filterExcludeFTTH) {
+      filterExcludeFTTH.checked = false;
     }
     applyFilters();
   });
   on('filterExcludeFTTH', 'change', e => {
-    if (e.target.checked) {
-      const ftth = document.getElementById('filterFTTH');
-      if (ftth) ftth.checked = false;
+    if (e.target.checked && filterFTTH) {
+      filterFTTH.checked = false;
     }
     applyFilters();
   });
@@ -2444,15 +2427,8 @@ function setupEventListeners() {
   on('quickSearch', 'input', debounce(applyFilters, 300));
   on('ordenarPorIngreso', 'change', applyFilters);
 
-  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
-  if (zoneFilterSearch) {
-    zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
-  }
-
-  const zoneFilterOptions = document.getElementById('zoneFilterOptions');
-  if (zoneFilterOptions) {
-    zoneFilterOptions.addEventListener('change', onZoneOptionChange);
-  }
+  on('zoneFilterSearch', 'input', onZoneFilterSearch);
+  on('zoneFilterOptions', 'change', onZoneOptionChange);
 
   document.addEventListener('click', handleZoneFilterOutsideClick);
 }
