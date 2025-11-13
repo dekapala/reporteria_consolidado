@@ -771,9 +771,42 @@ class DataProcessor {
         cellFormula: false,
         raw: false
       });
-      
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const range = XLSX.utils.decode_range(ws['!ref']);
+
+      if (!wb.SheetNames || wb.SheetNames.length === 0) {
+        throw new Error('El archivo no contiene hojas');
+      }
+
+      const firstSheetName = wb.SheetNames[0];
+      const ws = wb.Sheets[firstSheetName];
+      if (!ws) {
+        throw new Error('No se pudo abrir la primera hoja');
+      }
+
+      let ref = ws['!ref'];
+      if (!ref) {
+        const keys = Object.keys(ws).filter(k => k[0] !== '!');
+        if (keys.length === 0) {
+          throw new Error('La hoja está vacía');
+        }
+        let minR = Infinity, minC = Infinity, maxR = 0, maxC = 0;
+        for (const addr of keys) {
+          const { r, c } = XLSX.utils.decode_cell(addr);
+          if (r < minR) minR = r;
+          if (c < minC) minC = c;
+          if (r > maxR) maxR = r;
+          if (c > maxC) maxC = c;
+        }
+        ref = XLSX.utils.encode_range({ s: { r: minR, c: minC }, e: { r: maxR, c: maxC } });
+        ws['!ref'] = ref;
+      }
+
+      let range;
+      try {
+        range = XLSX.utils.decode_range(ws['!ref']);
+      } catch (err) {
+        range = { s: { r: 0, c: 0 }, e: { r: 999, c: 50 } };
+        ws['!ref'] = XLSX.utils.encode_range(range);
+      }
       
       let headerRow = 0;
       let headerDetected = false;
@@ -852,45 +885,60 @@ class DataProcessor {
       if (lines.length < 2) {
         return {success: false, error: 'CSV vacío'};
       }
-      
-      const parseCSVLine = (line) => {
-        const result = [];
-        let current = '';
-        let inQuotes = false;
-        
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          
-          if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if (char === ',' && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-          } else {
-            current += char;
-          }
-        }
-        result.push(current.trim());
-        return result;
-      };
-      
-      const headers = parseCSVLine(lines[0]);
+
+      const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const rows = [];
-      
-      for (let i = 1; i < lines.length; i++) {
-        const values = parseCSVLine(lines[i]);
+      let currentField = '';
+      let currentRow = [];
+      let inQuotes = false;
+
+      for (let i = 0; i < normalizedText.length; i++) {
+        const char = normalizedText[i];
+
+        if (char === '"') {
+          if (inQuotes && normalizedText[i + 1] === '"') {
+            currentField += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          currentRow.push(currentField.trim());
+          currentField = '';
+        } else if (char === '\n' && !inQuotes) {
+          currentRow.push(currentField.trim());
+          rows.push(currentRow);
+          currentRow = [];
+          currentField = '';
+        } else {
+          currentField += char;
+        }
+      }
+
+      if (currentField.length || currentRow.length) {
+        currentRow.push(currentField.trim());
+        rows.push(currentRow);
+      }
+
+      if (rows.length < 2) {
+        return {success: false, error: 'CSV vacío'};
+      }
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1).filter(r => r.some(cell => cell !== ''));
+      const mappedRows = dataRows.map(values => {
         const obj = {};
         headers.forEach((h, idx) => {
           obj[h] = values[idx] || '';
         });
-        rows.push(obj);
-      }
-      
-      console.log(`✅ CSV Alarmas: ${rows.length} alarmas leídas`);
-      this.fmsData = rows;
+        return obj;
+      });
+
+      console.log(`✅ CSV Alarmas: ${mappedRows.length} alarmas leídas`);
+      this.fmsData = mappedRows;
       this.processFMS();
-      
-      return {success: true, rows: rows.length};
+
+      return {success: true, rows: mappedRows.length};
     } catch (e) {
       console.error('Error loading CSV:', e);
       return {success: false, error: e.message};
@@ -1215,6 +1263,79 @@ class DataProcessor {
     
     return Array.from(territoriosMap.values())
       .sort((a, b) => b.totalOTs - a.totalOTs);
+  }
+}
+
+// ====== Persistencia de filtros (localStorage) ======
+const FilterPersistence = {
+  key: 'panel-v5-filters',
+  load() {
+    try { return JSON.parse(localStorage.getItem(this.key) || '{}'); }
+    catch { return {}; }
+  },
+  save(data) {
+    try { localStorage.setItem(this.key, JSON.stringify(data || {})); }
+    catch (e) { console.warn('No se pudo guardar filtros', e); }
+  }
+};
+
+function persistFilters() {
+  const snapshot = {
+    // toggles / selects principales
+    catec: document.getElementById('filterCATEC')?.checked || false,
+    excludeCatec: document.getElementById('filterExcludeCATEC')?.checked || false,
+    showAllStates: document.getElementById('showAllStates')?.checked || false,
+    ftth: document.getElementById('filterFTTH')?.checked || false,
+    excludeFTTH: document.getElementById('filterExcludeFTTH')?.checked || false,
+    nodoEstado: document.getElementById('filterNodoEstado')?.value || '',
+    cmts: document.getElementById('filterCMTS')?.value || '',
+    days: parseInt(document.getElementById('daysWindow')?.value || CONFIG.defaultDays, 10),
+    territorio: document.getElementById('filterTerritorio')?.value || '',
+    sistema: document.getElementById('filterSistema')?.value || '',
+    alarma: document.getElementById('filterAlarma')?.value || '',
+    quickSearch: document.getElementById('quickSearch')?.value || '',
+    ordenarPorIngreso: document.getElementById('ordenarPorIngreso')?.value || 'desc',
+
+    // multiselect de zonas
+    selectedZonas: Array.from(zoneFilterState?.selected || []),
+
+    // filtros del panel de equipos
+    equipoModelo: Array.isArray(Filters?.equipoModelo) ? Filters.equipoModelo : [],
+    equipoMarca: Filters?.equipoMarca || '',
+    equipoTerritorio: Filters?.equipoTerritorio || ''
+  };
+  FilterPersistence.save(snapshot);
+}
+
+function restoreFiltersToControls(saved = {}) {
+  const set = (id, prop, value) => {
+    const el = document.getElementById(id);
+    if (el != null) el[prop] = value;
+  };
+
+  set('filterCATEC','checked', !!saved.catec);
+  set('filterExcludeCATEC','checked', !!saved.excludeCatec);
+  set('showAllStates','checked', !!saved.showAllStates);
+  set('filterFTTH','checked', !!saved.ftth);
+  set('filterExcludeFTTH','checked', !!saved.excludeFTTH);
+  set('filterNodoEstado','value', saved.nodoEstado || '');
+  set('filterCMTS','value', saved.cmts || '');
+  set('daysWindow','value', String(saved.days || CONFIG.defaultDays));
+  set('filterTerritorio','value', saved.territorio || '');
+  set('filterSistema','value', saved.sistema || '');
+  set('filterAlarma','value', saved.alarma || '');
+  set('quickSearch','value', saved.quickSearch || '');
+  set('ordenarPorIngreso','value', saved.ordenarPorIngreso || 'desc');
+
+  // filtros de equipos
+  Filters.equipoModelo = Array.isArray(saved.equipoModelo) ? saved.equipoModelo : [];
+  Filters.equipoMarca = saved.equipoMarca || '';
+  Filters.equipoTerritorio = saved.equipoTerritorio || '';
+
+  // zonas seleccionadas (espera a que existan opciones)
+  if (Array.isArray(saved.selectedZonas) && saved.selectedZonas.length) {
+    Filters.selectedZonas = saved.selectedZonas;
+    zoneFilterState.selected = new Set(saved.selectedZonas);
   }
 }
 
@@ -2356,6 +2477,7 @@ let allZones = [];
 let allCMTS = [];
 let currentZone = null;
 let selectedOrders = new Set();
+let savedFiltersSnapshot = {};
 
 document.addEventListener('DOMContentLoaded', () => {
   savedFiltersSnapshot = FilterPersistence.load();
@@ -2411,15 +2533,33 @@ function setupEventListeners() {
   on('quickSearch', 'input', debounce(applyFilters, 300));
   on('ordenarPorIngreso', 'change', applyFilters);
 
-  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
-  if (zoneFilterSearch) {
-    zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
-  }
+  on('showAllStates', 'change', applyFilters);
 
-  const zoneFilterOptions = document.getElementById('zoneFilterOptions');
-  if (zoneFilterOptions) {
-    zoneFilterOptions.addEventListener('change', onZoneOptionChange);
-  }
+  const filterFTTH = document.getElementById('filterFTTH');
+  const filterExcludeFTTH = document.getElementById('filterExcludeFTTH');
+  on('filterFTTH', 'change', e => {
+    if (e.target.checked && filterExcludeFTTH) {
+      filterExcludeFTTH.checked = false;
+    }
+    applyFilters();
+  });
+  on('filterExcludeFTTH', 'change', e => {
+    if (e.target.checked && filterFTTH) {
+      filterFTTH.checked = false;
+    }
+    applyFilters();
+  });
+  on('filterNodoEstado', 'change', applyFilters);
+  on('filterCMTS', 'change', applyFilters);
+  on('daysWindow', 'change', applyFilters);
+  on('filterTerritorio', 'change', applyFilters);
+  on('filterSistema', 'change', applyFilters);
+  on('filterAlarma', 'change', applyFilters);
+  on('quickSearch', 'input', debounce(applyFilters, 300));
+  on('ordenarPorIngreso', 'change', applyFilters);
+
+  on('zoneFilterSearch', 'input', onZoneFilterSearch);
+  on('zoneFilterOptions', 'change', onZoneOptionChange);
 
   document.addEventListener('click', handleZoneFilterOutsideClick);
 }
@@ -2445,7 +2585,8 @@ async function loadFile(e, tipo) {
     const fileName = (file.name || '').toLowerCase();
     let result;
 
-    if (tipo === 4 && fileName.endsWith('.csv')) {
+    const isCSV = fileName.endsWith('.csv');
+    if (isCSV) {
       result = await dataProcessor.loadCSV(file);
     } else {
       result = await dataProcessor.loadExcel(file, tipo);
@@ -2614,6 +2755,7 @@ function applyFilters() {
   document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
   document.getElementById('edificiosPanel').innerHTML = UIRenderer.renderEdificios(filtered);
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
+  persistFilters();
 }
 
 function resetFiltersState() {
@@ -3200,8 +3342,7 @@ function renderModalContent() {
 }
 
 function toggleSelectAll() {
-  const checked = document.getElementById('selectAllOrders')?.checked || 
-                 document.getElementById('selectAllCheckbox')?.checked || false;
+  const checked = document.getElementById('selectAllCheckbox')?.checked || false;
   
   document.querySelectorAll('.order-checkbox').forEach(cb => {
     cb.checked = checked;
