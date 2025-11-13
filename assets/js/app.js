@@ -92,6 +92,80 @@ function findDispositivosColumn(rowObj){
        : null;
 }
 
+function normalizeMac(mac=''){
+  const clean = String(mac).trim().toUpperCase().replace(/[^0-9A-F]/g,'');
+  if (clean.length !== 12) return '';
+  return clean.match(/.{1,2}/g).join(':');
+}
+
+function pickPreferredDevice(devs=[]){
+  if (!Array.isArray(devs) || !devs.length) return null;
+
+  const mapValue = (value) => {
+    if (value === null || value === undefined) return '';
+    const str = String(value).trim();
+    return str;
+  };
+
+  const normalizedDevices = devs.map(dev => {
+    if (!dev || typeof dev !== 'object') return null;
+    const brand = mapValue(dev.brand || dev.category || dev.marca);
+    const technology = mapValue(dev.technology || dev.description || dev.detalle);
+    const model = mapValue(dev.model || dev.modelo);
+    const macRaw = dev.mac || dev.macAddress || dev.mac_address || dev.MAC;
+    const mac = normalizeMac(macRaw) || mapValue(macRaw);
+    const type = mapValue(dev.type || dev.tipo);
+
+    if (!(brand || technology || model || mac || type)) return null;
+
+    return {
+      brand,
+      technology,
+      model,
+      mac,
+      type
+    };
+  }).filter(Boolean);
+
+  if (!normalizedDevices.length) return null;
+
+  const withMac = normalizedDevices.find(d => d.mac);
+  if (withMac) return withMac;
+
+  const withModel = normalizedDevices.find(d => d.model);
+  if (withModel) return withModel;
+
+  return normalizedDevices[0];
+}
+
+function ensureOrderDeviceMeta(order){
+  if (!order || typeof order !== 'object') return null;
+
+  if (!order.__meta) order.__meta = {};
+  if (order.__meta.device) return order.__meta.device;
+
+  let dispositivos = [];
+
+  if (Array.isArray(order.__meta.dispositivos) && order.__meta.dispositivos.length) {
+    dispositivos = order.__meta.dispositivos;
+  } else {
+    const colInfo = findDispositivosColumn(order);
+    if (colInfo && order[colInfo]) {
+      dispositivos = TextUtils.parseDispositivosJSON(order[colInfo]);
+    }
+    order.__meta.dispositivos = dispositivos;
+  }
+
+  const device = pickPreferredDevice(dispositivos) || null;
+  if (device) {
+    order.__meta.device = device;
+    return device;
+  }
+
+  order.__meta.device = null;
+  return null;
+}
+
 const DateUtils = {
   parse(str) {
     if (!str) return null;
@@ -1879,20 +1953,14 @@ function toggleEquiposGrupo(zona){
 
 const ZONE_EXPORT_HEADERS = [
   'Fecha',
-  'ZonaHFC',
-  'ZonaFTTH',
-  'Territorio',
-  'Ubicacion',
+  'Zona/CAC',
   'Caso',
-  'NumeroOrden',
-  'NumeroOTuca',
-  'Diagnostico',
-  'Tipo',
-  'TipoTrabajo',
-  'Estado1',
-  'Estado2',
-  'Estado3',
-  'MAC'
+  'Numero Orden',
+  'Diagnostico Tecnico',
+  'Tipo Trabajo',
+  'MAC',
+  'Modelo',
+  'Tipo'
 ];
 
 const ORDER_FIELD_KEYS = {
@@ -2066,55 +2134,45 @@ function buildUbicacion(order){
 
 function buildOrderExportRow(order, zoneInfo){
   if (!order) return null;
+
+  ensureOrderDeviceMeta(order);
   const meta = order.__meta || {};
+  const device = meta.device || {};
 
   let fecha = pickFirstValue(order, ORDER_FIELD_KEYS.fecha);
   if (!fecha && meta.fecha){
     fecha = DateUtils.format(meta.fecha);
   }
 
-  const zonaHFC = meta.zonaHFC || zoneInfo?.zonaHFC || pickFirstValue(order, ORDER_FIELD_KEYS.zonaHFC) || zoneInfo?.zona || '';
-  const zonaFTTH = meta.zonaFTTH || zoneInfo?.zonaFTTH || pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH);
-  const territorio = meta.territorio || pickFirstValue(order, ORDER_FIELD_KEYS.territorio);
-  const ubicacion = buildUbicacion(order);
+  const zonaCAC = meta.zona ||
+                   zoneInfo?.zona ||
+                   meta.zonaHFC ||
+                   meta.zonaFTTH ||
+                   zoneInfo?.zonaHFC ||
+                   zoneInfo?.zonaFTTH ||
+                   pickFirstValue(order, ORDER_FIELD_KEYS.zonaHFC) ||
+                   pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH);
+
   const caso = meta.numeroCaso || pickFirstValue(order, ORDER_FIELD_KEYS.caso);
   const numeroOrden = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOrden);
-  const numeroOTuca = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOTuca);
-  const diagnostico = pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
-  const tipo = pickFirstValue(order, ORDER_FIELD_KEYS.tipo) || zoneInfo?.tipo || '';
+  const diagnosticoTecnico = extractDiagnosticoTecnico(order) || pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
   const tipoTrabajo = pickFirstValue(order, ORDER_FIELD_KEYS.tipoTrabajo);
-  const estado1 = pickFirstValue(order, ORDER_FIELD_KEYS.estado1);
-  let estado2 = pickFirstValue(order, ORDER_FIELD_KEYS.estado2);
-  let estado3 = pickFirstValue(order, ORDER_FIELD_KEYS.estado3);
-  if (estado3 && estado2 && estado3 === estado2){
-    const alternativas = ['Estado final', 'Estado gestión', 'Estado Gestion', 'Estado detalle'];
-    const altern = pickFirstValue(order, alternativas);
-    if (altern && altern !== estado2){
-      estado3 = altern;
-    }
-  }
 
-  let mac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
-  if (!mac && Array.isArray(meta.dispositivos) && meta.dispositivos.length){
-    mac = String(meta.dispositivos[0].macAddress || meta.dispositivos[0].mac || '').trim();
-  }
+  const rawMac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
+  const mac = device.mac || normalizeMac(rawMac) || rawMac;
+  const modelo = device.model || '';
+  const tipoEquipo = device.type || device.technology || pickFirstValue(order, ORDER_FIELD_KEYS.tipo);
 
   return {
-    Fecha: fecha || '',
-    ZonaHFC: zonaHFC || '',
-    ZonaFTTH: zonaFTTH || '',
-    Territorio: territorio || '',
-    Ubicacion: ubicacion || '',
-    Caso: caso || '',
-    NumeroOrden: numeroOrden || '',
-    NumeroOTuca: numeroOTuca || '',
-    Diagnostico: diagnostico || '',
-    Tipo: tipo || '',
-    TipoTrabajo: tipoTrabajo || '',
-    Estado1: estado1 || '',
-    Estado2: estado2 || '',
-    Estado3: estado3 || '',
-    MAC: mac || ''
+    'Fecha': fecha || '',
+    'Zona/CAC': zonaCAC || '',
+    'Caso': caso || '',
+    'Numero Orden': numeroOrden || '',
+    'Diagnostico Tecnico': diagnosticoTecnico || '',
+    'Tipo Trabajo': tipoTrabajo || '',
+    'MAC': mac || '',
+    'Modelo': modelo || '',
+    'Tipo': tipoEquipo || ''
   };
 }
 
@@ -2894,6 +2952,15 @@ function renderModalContent() {
       return dt && DateUtils.format(dt) === dia;
     });
   }
+
+  let resumenDispositivo = null;
+  for (const orden of ordenes) {
+    const device = ensureOrderDeviceMeta(orden);
+    if (device && (device.brand || device.technology || device.model || device.mac || device.type)) {
+      resumenDispositivo = device;
+      break;
+    }
+  }
   
   const chartCounts = UIRenderer.normalizeCounts(currentZone.last7DaysCounts);
   const chartLabels = Array.isArray(currentZone.last7Days) ? currentZone.last7Days : [];
@@ -2926,6 +2993,29 @@ function renderModalContent() {
     <strong>Total órdenes mostradas:</strong> ${ordenes.length} de ${currentZone.ordenes.length}
   </div>`;
 
+  if (resumenDispositivo) {
+    const valores = {
+      'Marca': resumenDispositivo.brand,
+      'Tecnología': resumenDispositivo.technology,
+      'Modelo': resumenDispositivo.model,
+      'MAC': resumenDispositivo.mac,
+      'Tipo': resumenDispositivo.type || resumenDispositivo.technology
+    };
+    const infoHtml = Object.entries(valores).map(([label, value]) => {
+      const safeValue = value ? escapeHtml(value) : '—';
+      return `<div style="min-width: 140px;"><strong>${label}:</strong> ${safeValue}</div>`;
+    }).join('');
+
+    html += `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
+      <div style="font-weight: 600; margin-bottom: 8px;">Resumen del equipo</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.85rem;">${infoHtml}</div>
+    </div>`;
+  } else {
+    html += `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px; font-size: 0.85rem; color: var(--text-secondary);">
+      Sin información de dispositivos en las órdenes visibles.
+    </div>`;
+  }
+
   const diagnosticosTecnicos = Array.isArray(currentZone.diagnosticos) ? currentZone.diagnosticos.filter(Boolean) : [];
   if (diagnosticosTecnicos.length) {
     const chips = diagnosticosTecnicos.slice(0, 6).map(d => {
@@ -2957,6 +3047,13 @@ function renderModalContent() {
   });
   
   const columns = Array.from(allCols);
+  const extraDeviceColumns = ['MAC', 'Modelo', 'Tipo'];
+  extraDeviceColumns.forEach(col => {
+    if (!columns.includes(col)) {
+      columns.push(col);
+    }
+  });
+
   columns.forEach(col => {
     html += `<th style="position: sticky; top: 0; z-index: 10; white-space: nowrap;">${col}</th>`;
   });
@@ -2966,12 +3063,27 @@ function renderModalContent() {
   ordenes.forEach((o, idx) => {
     const cita = o['Número de cita'] || `row_${idx}`;
     const checked = selectedOrders.has(cita) ? 'checked' : '';
+    const device = ensureOrderDeviceMeta(o) || {};
+    const rawMac = pickFirstValue(o, ORDER_FIELD_KEYS.mac);
+    const fallbackMac = normalizeMac(rawMac) || rawMac || '';
+    const fallbackTipo = pickFirstValue(o, ORDER_FIELD_KEYS.tipo);
+    const deviceData = {
+      MAC: device.mac || fallbackMac,
+      Modelo: device.model || '',
+      Tipo: device.type || device.technology || fallbackTipo || ''
+    };
     html += `<tr>`;
     html += `<td><input type="checkbox" class="order-checkbox" data-cita="${cita}" ${checked} onchange="updateSelection()"></td>`;
-    
+
     columns.forEach(col => {
-      let value = o[col] || '';
-      
+      let value;
+
+      if (extraDeviceColumns.includes(col)) {
+        value = deviceData[col] || '';
+      } else {
+        value = o[col] || '';
+      }
+
       if (col.includes('Número del caso') || col.includes('Caso')) {
         const sistema = TextUtils.detectarSistema(value);
         if (sistema) {
