@@ -92,6 +92,30 @@ function findDispositivosColumn(rowObj){
        : null;
 }
 
+async function readFileAsUint8Array(file){
+  if (!file) return new Uint8Array();
+  if (file.arrayBuffer) {
+    const buf = await file.arrayBuffer();
+    return new Uint8Array(buf);
+  }
+  return await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(new Uint8Array(fr.result));
+    fr.onerror = reject;
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+function on(id, evt, handler){
+  const el = document.getElementById(id);
+  if (!el){
+    console.warn(`⚠️ No se encontró el elemento con id "${id}" para adjuntar ${evt}`);
+    return null;
+  }
+  el.addEventListener(evt, handler);
+  return el;
+}
+
 function normalizeMac(mac=''){
   const clean = String(mac).trim().toUpperCase().replace(/[^0-9A-F]/g,'');
   if (clean.length !== 12) return '';
@@ -153,10 +177,47 @@ function ensureOrderDeviceMeta(order){
     if (colInfo && order[colInfo]) {
       dispositivos = TextUtils.parseDispositivosJSON(order[colInfo]);
     }
-    order.__meta.dispositivos = dispositivos;
   }
 
+  const normalizedDevices = Array.isArray(dispositivos)
+    ? dispositivos.map(dev => {
+        if (!dev || typeof dev !== 'object') return null;
+        const mapValue = (val) => val === null || val === undefined ? '' : String(val).trim();
+        const macAddress = normalizeMac(dev.macAddress || dev.mac || dev.mac_address || dev.MAC) || mapValue(dev.macAddress || dev.mac);
+        const serialNumber = mapValue(dev.serialNumber || dev.serial || dev.serie);
+        const model = mapValue(dev.model || dev.modelo);
+        const category = mapValue(dev.category || dev.brand || dev.marca);
+        const technology = mapValue(dev.technology || dev.description || dev.detalle);
+        const type = mapValue(dev.type || dev.tipo);
+        const brand = mapValue(dev.brand || dev.category || dev.marca || category);
+
+        if (!(macAddress || serialNumber || model || category || technology || type || brand)) {
+          return null;
+        }
+
+        return {
+          macAddress,
+          serialNumber,
+          model,
+          category,
+          technology,
+          type,
+          brand,
+          mac: macAddress
+        };
+      }).filter(Boolean)
+    : [];
+
+  order.__meta.dispositivos = normalizedDevices;
+  dispositivos = normalizedDevices;
+
   const device = pickPreferredDevice(dispositivos) || null;
+  if (device && Array.isArray(dispositivos) && dispositivos.length) {
+    const [first] = dispositivos;
+    if (device !== first) {
+      order.__meta.dispositivos = [device, ...dispositivos.filter(d => d !== device)];
+    }
+  }
   if (device) {
     order.__meta.device = device;
     return device;
@@ -715,6 +776,7 @@ class DataProcessor {
       const range = XLSX.utils.decode_range(ws['!ref']);
       
       let headerRow = 0;
+      let headerDetected = false;
       for (let R = 0; R <= 20; R++) {
         let hasContent = false;
         for (let C = 0; C <= 15; C++) {
@@ -724,12 +786,14 @@ class DataProcessor {
             const cellValue = String(cell.v).toLowerCase();
             if (cellValue.includes('zona') && cellValue.includes('tecnica')) {
               headerRow = R;
+              headerDetected = true;
               console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
               hasContent = true;
               break;
             }
             if (cellValue.includes('numero') && (cellValue.includes('caso') || cellValue.includes('cuenta'))) {
               headerRow = R;
+              headerDetected = true;
               console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
               hasContent = true;
               break;
@@ -738,7 +802,12 @@ class DataProcessor {
         }
         if (hasContent) break;
       }
-      
+
+      if (!headerDetected) {
+        headerRow = 0;
+        console.warn('⚠️ No se detectaron headers de zona/caso. Se usará la primera fila como encabezado.');
+      }
+
       console.log(`📋 Usando fila ${headerRow + 1} como headers`);
       
       range.s.r = headerRow;
@@ -775,9 +844,11 @@ class DataProcessor {
   
   async loadCSV(file) {
     try {
-      const text = await file.text();
+      const buffer = await readFileAsUint8Array(file);
+      const decoder = new TextDecoder('utf-8');
+      const text = decoder.decode(buffer);
       const lines = text.split('\n').filter(l => l.trim());
-      
+
       if (lines.length < 2) {
         return {success: false, error: 'CSV vacío'};
       }
@@ -2158,8 +2229,12 @@ function buildOrderExportRow(order, zoneInfo){
   const diagnosticoTecnico = extractDiagnosticoTecnico(order) || pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
   const tipoTrabajo = pickFirstValue(order, ORDER_FIELD_KEYS.tipoTrabajo);
 
-  const rawMac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
-  const mac = device.mac || normalizeMac(rawMac) || rawMac;
+  let mac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
+  if (!mac && Array.isArray(order.__meta?.dispositivos) && order.__meta.dispositivos.length) {
+    const primaryDevice = order.__meta.dispositivos[0];
+    mac = primaryDevice.macAddress || primaryDevice.mac || '';
+  }
+  mac = device.mac || normalizeMac(mac) || mac || '';
   const modelo = device.model || '';
   const tipoEquipo = device.type || device.technology || pickFirstValue(order, ORDER_FIELD_KEYS.tipo);
 
@@ -2289,10 +2364,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function setupEventListeners() {
-  document.getElementById('fileConsolidado1').addEventListener('change', e => loadFile(e, 1));
-  document.getElementById('fileConsolidado2').addEventListener('change', e => loadFile(e, 2));
-  document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
-  document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
+  on('fileConsolidado1', 'change', e => loadFile(e, 1));
+  on('fileConsolidado2', 'change', e => loadFile(e, 2));
+  on('fileNodos', 'change', e => loadFile(e, 3));
+  on('fileFMS', 'change', e => loadFile(e, 4));
   
   const filterCatec = document.getElementById('filterCATEC');
   const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
@@ -2312,23 +2387,29 @@ function setupEventListeners() {
       applyFilters();
     });
   }
-  document.getElementById('showAllStates').addEventListener('change', applyFilters);
-  document.getElementById('filterFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
+  on('showAllStates', 'change', applyFilters);
+  on('filterFTTH', 'change', e => {
+    if (e.target.checked) {
+      const exclude = document.getElementById('filterExcludeFTTH');
+      if (exclude) exclude.checked = false;
+    }
     applyFilters();
   });
-  document.getElementById('filterExcludeFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterFTTH').checked = false;
+  on('filterExcludeFTTH', 'change', e => {
+    if (e.target.checked) {
+      const ftth = document.getElementById('filterFTTH');
+      if (ftth) ftth.checked = false;
+    }
     applyFilters();
   });
-  document.getElementById('filterNodoEstado').addEventListener('change', applyFilters);
-  document.getElementById('filterCMTS').addEventListener('change', applyFilters);
-  document.getElementById('daysWindow').addEventListener('change', applyFilters);
-  document.getElementById('filterTerritorio').addEventListener('change', applyFilters);
-  document.getElementById('filterSistema').addEventListener('change', applyFilters);
-  document.getElementById('filterAlarma').addEventListener('change', applyFilters);
-  document.getElementById('quickSearch').addEventListener('input', debounce(applyFilters, 300));
-  document.getElementById('ordenarPorIngreso').addEventListener('change', applyFilters);
+  on('filterNodoEstado', 'change', applyFilters);
+  on('filterCMTS', 'change', applyFilters);
+  on('daysWindow', 'change', applyFilters);
+  on('filterTerritorio', 'change', applyFilters);
+  on('filterSistema', 'change', applyFilters);
+  on('filterAlarma', 'change', applyFilters);
+  on('quickSearch', 'input', debounce(applyFilters, 300));
+  on('ordenarPorIngreso', 'change', applyFilters);
 
   const zoneFilterSearch = document.getElementById('zoneFilterSearch');
   if (zoneFilterSearch) {
@@ -2350,6 +2431,8 @@ async function loadFile(e, tipo) {
     return;
   }
 
+  console.log(`📂 Archivo recibido (tipo ${tipo}): ${file.name || 'sin nombre'} • ${file.size || 0} bytes`);
+
   const statusEl = document.getElementById(`status${tipo}`);
   if (!statusEl) {
     console.warn(`No se encontró el indicador de estado para el archivo tipo ${tipo}`);
@@ -2369,6 +2452,7 @@ async function loadFile(e, tipo) {
     }
 
     if (result.success) {
+      console.log(`✅ Archivo procesado (tipo ${tipo}): ${file.name || 'sin nombre'} • ${result.rows} filas`);
       if (statusEl) {
         statusEl.textContent = `✓ ${result.rows} filas cargadas`;
         statusEl.classList.add('loaded');
@@ -2392,7 +2476,7 @@ async function loadFile(e, tipo) {
     if (statusEl) {
       statusEl.textContent = '✗ Error';
     }
-    toast(`Error al procesar archivo: ${error?.message || error}`);
+    toast(error?.message || 'Error al procesar archivo');
   } finally {
     if (input) {
       input.value = '';
@@ -3065,7 +3149,14 @@ function renderModalContent() {
     const checked = selectedOrders.has(cita) ? 'checked' : '';
     const device = ensureOrderDeviceMeta(o) || {};
     const rawMac = pickFirstValue(o, ORDER_FIELD_KEYS.mac);
-    const fallbackMac = normalizeMac(rawMac) || rawMac || '';
+    let fallbackMac = rawMac;
+    const dispositivoPrincipal = Array.isArray(o.__meta?.dispositivos) && o.__meta.dispositivos.length
+      ? o.__meta.dispositivos[0]
+      : null;
+    if (!fallbackMac && dispositivoPrincipal) {
+      fallbackMac = dispositivoPrincipal.macAddress || dispositivoPrincipal.mac || '';
+    }
+    fallbackMac = normalizeMac(fallbackMac) || fallbackMac || '';
     const fallbackTipo = pickFirstValue(o, ORDER_FIELD_KEYS.tipo);
     const deviceData = {
       MAC: device.mac || fallbackMac,
