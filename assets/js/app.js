@@ -1236,6 +1236,79 @@ class DataProcessor {
   }
 }
 
+// ====== Persistencia de filtros (localStorage) ======
+const FilterPersistence = {
+  key: 'panel-v5-filters',
+  load() {
+    try { return JSON.parse(localStorage.getItem(this.key) || '{}'); }
+    catch { return {}; }
+  },
+  save(data) {
+    try { localStorage.setItem(this.key, JSON.stringify(data || {})); }
+    catch (e) { console.warn('No se pudo guardar filtros', e); }
+  }
+};
+
+function persistFilters() {
+  const snapshot = {
+    // toggles / selects principales
+    catec: document.getElementById('filterCATEC')?.checked || false,
+    excludeCatec: document.getElementById('filterExcludeCATEC')?.checked || false,
+    showAllStates: document.getElementById('showAllStates')?.checked || false,
+    ftth: document.getElementById('filterFTTH')?.checked || false,
+    excludeFTTH: document.getElementById('filterExcludeFTTH')?.checked || false,
+    nodoEstado: document.getElementById('filterNodoEstado')?.value || '',
+    cmts: document.getElementById('filterCMTS')?.value || '',
+    days: parseInt(document.getElementById('daysWindow')?.value || CONFIG.defaultDays, 10),
+    territorio: document.getElementById('filterTerritorio')?.value || '',
+    sistema: document.getElementById('filterSistema')?.value || '',
+    alarma: document.getElementById('filterAlarma')?.value || '',
+    quickSearch: document.getElementById('quickSearch')?.value || '',
+    ordenarPorIngreso: document.getElementById('ordenarPorIngreso')?.value || 'desc',
+
+    // multiselect de zonas
+    selectedZonas: Array.from(zoneFilterState?.selected || []),
+
+    // filtros del panel de equipos
+    equipoModelo: Array.isArray(Filters?.equipoModelo) ? Filters.equipoModelo : [],
+    equipoMarca: Filters?.equipoMarca || '',
+    equipoTerritorio: Filters?.equipoTerritorio || ''
+  };
+  FilterPersistence.save(snapshot);
+}
+
+function restoreFiltersToControls(saved = {}) {
+  const set = (id, prop, value) => {
+    const el = document.getElementById(id);
+    if (el != null) el[prop] = value;
+  };
+
+  set('filterCATEC','checked', !!saved.catec);
+  set('filterExcludeCATEC','checked', !!saved.excludeCatec);
+  set('showAllStates','checked', !!saved.showAllStates);
+  set('filterFTTH','checked', !!saved.ftth);
+  set('filterExcludeFTTH','checked', !!saved.excludeFTTH);
+  set('filterNodoEstado','value', saved.nodoEstado || '');
+  set('filterCMTS','value', saved.cmts || '');
+  set('daysWindow','value', String(saved.days || CONFIG.defaultDays));
+  set('filterTerritorio','value', saved.territorio || '');
+  set('filterSistema','value', saved.sistema || '');
+  set('filterAlarma','value', saved.alarma || '');
+  set('quickSearch','value', saved.quickSearch || '');
+  set('ordenarPorIngreso','value', saved.ordenarPorIngreso || 'desc');
+
+  // filtros de equipos
+  Filters.equipoModelo = Array.isArray(saved.equipoModelo) ? saved.equipoModelo : [];
+  Filters.equipoMarca = saved.equipoMarca || '';
+  Filters.equipoTerritorio = saved.equipoTerritorio || '';
+
+  // zonas seleccionadas (espera a que existan opciones)
+  if (Array.isArray(saved.selectedZonas) && saved.selectedZonas.length) {
+    Filters.selectedZonas = saved.selectedZonas;
+    zoneFilterState.selected = new Set(saved.selectedZonas);
+  }
+}
+
 const dataProcessor = new DataProcessor();
 
 const zoneFilterState = {
@@ -2374,6 +2447,7 @@ let allZones = [];
 let allCMTS = [];
 let currentZone = null;
 let selectedOrders = new Set();
+let savedFiltersSnapshot = {};
 
 document.addEventListener('DOMContentLoaded', () => {
   savedFiltersSnapshot = FilterPersistence.load();
@@ -2624,6 +2698,7 @@ function applyFilters() {
   document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
   document.getElementById('edificiosPanel').innerHTML = UIRenderer.renderEdificios(filtered);
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
+  persistFilters();
 }
 
 function resetFiltersState() {
@@ -3210,8 +3285,7 @@ function renderModalContent() {
 }
 
 function toggleSelectAll() {
-  const checked = document.getElementById('selectAllOrders')?.checked || 
-                 document.getElementById('selectAllCheckbox')?.checked || false;
+  const checked = document.getElementById('selectAllCheckbox')?.checked || false;
   
   document.querySelectorAll('.order-checkbox').forEach(cb => {
     cb.checked = checked;
