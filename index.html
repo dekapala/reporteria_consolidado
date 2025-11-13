@@ -224,7 +224,7 @@
         </div>
       </section>
 
-   <section class="content-tabs">
+<section class="content-tabs">
   <div class="tabs-nav">
     <button class="tab-btn active" data-tab="zonas" onclick="switchTab('zonas')">🗺️ Zonas</button>
     <button class="tab-btn" data-tab="cmts" onclick="switchTab('cmts')">🧭 CMTS</button>
@@ -233,13 +233,17 @@
     <button class="tab-btn" data-tab="fms" onclick="switchTab('fms')">🚨 FMS</button>
   </div>
 
-  <!-- Paneles -->
-  <div id="zonasPanel" class="tab-panel active"></div>
-  <div id="cmtsPanel" class="tab-panel"></div>
-  <div id="edificiosPanel" class="tab-panel"></div>
-  <div id="equiposPanel" class="tab-panel"></div>
-  <div id="fmsPanel" class="tab-panel"></div>
+  <div class="tabs-content">
+    <div id="zonasPanel" class="tab-panel active">
+      <div class="loading-message"><p>Los datos de zonas aparecerán aquí</p></div>
+    </div>
+    <div id="cmtsPanel" class="tab-panel"></div>
+    <div id="edificiosPanel" class="tab-panel"></div>
+    <div id="equiposPanel" class="tab-panel"></div>
+    <div id="fmsPanel" class="tab-panel"></div>
+  </div>
 </section>
+
 
         <div class="tabs-content">
           <div class="tab-panel active" id="zonasPanel">
