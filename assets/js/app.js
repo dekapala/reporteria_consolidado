@@ -378,16 +378,21 @@ function toggleUtilities() {
   menu.classList.toggle('show');
 }
 
+function closeUtilitiesMenu() {
+  const menu = document.getElementById('utilitiesMenu');
+  if (!menu) return;
+  menu.classList.remove('show');
+}
+
 document.addEventListener('click', (e) => {
   const dropdown = document.querySelector('.utilities-dropdown');
-  const menu = document.getElementById('utilitiesMenu');
-  if (dropdown && !dropdown.contains(e.target) && menu) {
-    menu.classList.remove('show');
+  if (dropdown && !dropdown.contains(e.target)) {
+    closeUtilitiesMenu();
   }
 });
 
 function openPlanillasNewTab() {
-  document.getElementById('utilitiesMenu').classList.remove('show');
+  closeUtilitiesMenu();
 
   const newWindow = window.open('', '_blank', 'width=1000,height=800');
   if (!newWindow) {
@@ -513,7 +518,7 @@ Generado desde Panel Fulfillment v5.0\`;
 }
 
 function openUsefulLinks() {
-  document.getElementById('utilitiesMenu').classList.remove('show');
+  closeUtilitiesMenu();
 
   const win = window.open('', '_blank', 'width=1200,height=860,scrollbars=yes');
   if (!win) {
@@ -1154,6 +1159,22 @@ class DataProcessor {
 
 const dataProcessor = new DataProcessor();
 
+function escapeHtml(str = '') {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function truncateText(str = '', maxLength = 60) {
+  const text = String(str || '').trim();
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
 const zoneFilterState = {
   allOptions: [],
   filteredOptions: [],
@@ -1339,21 +1360,132 @@ const Filters = {
   }
 };
 
-function initializeZoneFilterOptions(zones) {
-  const unique = Array.from(new Set((zones || []).filter(Boolean)));
-  unique.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+function extractDamageSummaryFromZone(zone) {
+  if (!zone || typeof zone !== 'object') return [];
+  if (Array.isArray(zone.damageSummary) && zone.damageSummary.length) {
+    return zone.damageSummary.map(item => ({
+      diagnostico: item.diagnostico,
+      count: item.count
+    }));
+  }
 
-  zoneFilterState.allOptions = unique;
-  zoneFilterState.filteredOptions = unique.slice();
-  zoneFilterState.selected = new Set();
-  zoneFilterState.search = '';
+  const counts = new Map();
+  const ordenes = Array.isArray(zone.ordenesOriginales)
+    ? zone.ordenesOriginales
+    : Array.isArray(zone.ordenes)
+      ? zone.ordenes
+      : [];
 
-  const searchInput = document.getElementById('zoneFilterSearch');
-  if (searchInput) searchInput.value = '';
+  ordenes.forEach(o => {
+    const diag = o['Diagnostico Tecnico'] ||
+                 o['Diagnóstico Técnico'] ||
+                 o['Diagnostico tecnico'] ||
+                 o['Diagnostico'] ||
+                 'Sin diagnóstico';
+    const key = (diag && String(diag).trim()) || 'Sin diagnóstico';
+    if (!counts.has(key)) {
+      counts.set(key, { diagnostico: key, count: 0 });
+    }
+    counts.get(key).count += 1;
+  });
+
+  return Array.from(counts.values()).sort((a, b) => b.count - a.count);
+}
+
+function buildZoneFilterOptions(zones = []) {
+  const optionsMap = new Map();
+
+  (zones || []).forEach(item => {
+    if (!item) return;
+
+    if (typeof item === 'string') {
+      const name = item.trim();
+      if (!name) return;
+      if (!optionsMap.has(name)) {
+        optionsMap.set(name, {
+          name,
+          totalOTs: 0,
+          damageSummary: []
+        });
+      }
+      return;
+    }
+
+    const name = (item.zona || item.name || '').trim();
+    if (!name) return;
+
+    const total = Number.isFinite(item.totalOTs)
+      ? item.totalOTs
+      : Array.isArray(item.ordenesOriginales)
+        ? item.ordenesOriginales.length
+        : Array.isArray(item.ordenes)
+          ? item.ordenes.length
+          : 0;
+
+    optionsMap.set(name, {
+      name,
+      totalOTs: total,
+      damageSummary: extractDamageSummaryFromZone(item),
+      tipo: item.tipo || '',
+      criticidad: item.criticidad || '',
+      tieneAlarma: Boolean(item.tieneAlarma)
+    });
+  });
+
+  const options = Array.from(optionsMap.values());
+  options.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+  return options;
+}
+
+function filterZoneOptionsBySearch(options, term) {
+  const normalized = TextUtils.normalize(term || '');
+  if (!normalized) return options.slice();
+
+  return options.filter(option => {
+    if (TextUtils.normalize(option.name).includes(normalized)) return true;
+    return option.damageSummary.some(d => TextUtils.normalize(d.diagnostico).includes(normalized));
+  });
+}
+
+function initializeZoneFilterOptions(zones, options = {}) {
+  const { resetSelection = true, resetSearch = resetSelection } = options;
+
+  const previousSelection = new Set(zoneFilterState.selected);
+  const builtOptions = buildZoneFilterOptions(zones);
+
+  zoneFilterState.allOptions = builtOptions;
+
+  let selectionChanged = false;
+  if (resetSelection) {
+    selectionChanged = previousSelection.size > 0;
+    zoneFilterState.selected = new Set();
+  } else {
+    const nextSelection = new Set();
+    previousSelection.forEach(zoneName => {
+      if (builtOptions.some(opt => opt.name === zoneName)) {
+        nextSelection.add(zoneName);
+      }
+    });
+    selectionChanged = nextSelection.size !== previousSelection.size;
+    zoneFilterState.selected = nextSelection;
+  }
+
+  if (resetSearch) {
+    zoneFilterState.search = '';
+    const searchInput = document.getElementById('zoneFilterSearch');
+    if (searchInput) searchInput.value = '';
+  }
+
+  zoneFilterState.filteredOptions = filterZoneOptionsBySearch(
+    zoneFilterState.allOptions,
+    zoneFilterState.search
+  );
 
   renderZoneFilterOptions();
   updateZoneFilterSummary();
-  Filters.selectedZonas = [];
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+
+  return selectionChanged;
 }
 
 function renderZoneFilterOptions() {
@@ -1370,9 +1502,33 @@ function renderZoneFilterOptions() {
     return;
   }
 
-  const optionsHtml = zoneFilterState.filteredOptions.map(z => {
-    const checked = zoneFilterState.selected.has(z) ? 'checked' : '';
-    return `<label class="zone-option"><input type="checkbox" value="${z}" ${checked}> <span>${z}</span></label>`;
+  const optionsHtml = zoneFilterState.filteredOptions.map(option => {
+    const checked = zoneFilterState.selected.has(option.name) ? 'checked' : '';
+    const safeName = escapeHtml(option.name);
+    const total = Number.isFinite(option.totalOTs) ? option.totalOTs : 0;
+    const totalLabel = `${total} OT${total === 1 ? '' : 's'}`;
+
+    const diagnostics = (option.damageSummary || []).slice(0, 3);
+    const diagnosticsHtml = diagnostics.length
+      ? `<ul class="zone-option__diagnostics">${diagnostics.map(d => {
+          const label = escapeHtml(truncateText(d.diagnostico, 48));
+          const tooltip = escapeHtml(d.diagnostico || '');
+          return `<li class="zone-option__diagnostic"><span class="zone-option__diagnostic-name" title="${tooltip}">${label}</span><span class="zone-option__diagnostic-count">${d.count}</span></li>`;
+        }).join('')}</ul>`
+      : '<div class="zone-option__diagnostics zone-option__diagnostics--empty">Sin órdenes técnicas en ventana</div>';
+
+    return `
+      <label class="zone-option">
+        <input type="checkbox" value="${safeName}" ${checked}>
+        <div class="zone-option__content">
+          <div class="zone-option__header">
+            <span class="zone-option__name" title="${safeName}">${safeName}</span>
+            <span class="zone-option__count">${totalLabel}</span>
+          </div>
+          ${diagnosticsHtml}
+        </div>
+      </label>
+    `;
   }).join('');
 
   container.innerHTML = optionsHtml;
@@ -1457,17 +1613,7 @@ function onZoneFilterSearch(event) {
   const value = event.target.value || '';
   zoneFilterState.search = value;
 
-  if (!zoneFilterState.allOptions.length) {
-    renderZoneFilterOptions();
-    return;
-  }
-
-  const normalizedTerm = TextUtils.normalize(value);
-  if (!normalizedTerm) {
-    zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
-  } else {
-    zoneFilterState.filteredOptions = zoneFilterState.allOptions.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
-  }
+  zoneFilterState.filteredOptions = filterZoneOptionsBySearch(zoneFilterState.allOptions, value);
 
   renderZoneFilterOptions();
 }
@@ -1502,7 +1648,7 @@ function selectAllZones(event) {
   const source = hasSearch ? zoneFilterState.filteredOptions : zoneFilterState.allOptions;
   if (!source.length) return;
 
-  source.forEach(z => zoneFilterState.selected.add(z));
+  source.forEach(option => zoneFilterState.selected.add(option.name));
 
   Filters.selectedZonas = Array.from(zoneFilterState.selected);
   renderZoneFilterOptions();
@@ -1521,12 +1667,10 @@ function resetZoneFilterState(options = {}) {
     const searchInput = document.getElementById('zoneFilterSearch');
     if (searchInput) searchInput.value = '';
   } else {
-    const normalizedTerm = TextUtils.normalize(zoneFilterState.search);
-    if (!normalizedTerm) {
-      zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
-    } else {
-      zoneFilterState.filteredOptions = zoneFilterState.allOptions.filter(z => TextUtils.normalize(z).includes(normalizedTerm));
-    }
+    zoneFilterState.filteredOptions = filterZoneOptionsBySearch(
+      zoneFilterState.allOptions,
+      zoneFilterState.search
+    );
   }
 
   renderZoneFilterOptions();
@@ -1969,8 +2113,8 @@ const EdificiosMejorado = {
           ${hasAlarmas ? `<span class="badge badge-alarma ${alarmasClass}">${e.alarmas.length}</span>` : '-'}
         </td>
         <td>
-          <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;" 
-                  onclick="abrirEdificioDetalle(${idx})">
+          <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem;"
+                  onclick="showEdificioDetail(${idx})">
             👁️ Ver Detalle
           </button>
         </td>
@@ -1981,160 +2125,6 @@ const EdificiosMejorado = {
     return html;
   }
 };
-
-/**
- * Abre modal con detalle completo del edificio
- * @param {number} idx - Índice del edificio
- */
-function abrirEdificioDetalle(idx) {
-  if (!window.edificiosData || idx >= window.edificiosData.length) return;
-  
-  const edificio = window.edificiosData[idx];
-  
-  let html = `
-    <div class="edificio-detalle">
-      <div class="edificio-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-           padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-        <h2 style="margin: 0 0 10px 0; font-size: 24px;">🏢 ${edificio.direccion}</h2>
-        <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 15px;">
-          <div><strong>Zona:</strong> ${edificio.zona}</div>
-          <div><strong>Territorio:</strong> ${edificio.territorio}</div>
-          <div><strong>Total OTs:</strong> ${edificio.casos.length}</div>
-          <div><strong>CATEC:</strong> <span class="badge badge-success">${edificio.casosCATEC.length}</span></div>
-          <div><strong>No CATEC:</strong> <span class="badge badge-warning">${edificio.casosNoCATEC.length}</span></div>
-          ${edificio.alarmas.length > 0 ? 
-            `<div><strong>🚨 Alarmas Activas:</strong> <span class="badge badge-alarma badge-alarma-activa">${edificio.alarmas.length}</span></div>` 
-            : ''}
-        </div>
-      </div>
-  `;
-  
-  // Panel de ingreso por día
-  if (edificio.ingresosPorDia.size > 0) {
-    html += `
-      <div class="panel-ingreso-dia" style="margin-bottom: 25px;">
-        <h3 style="margin: 0 0 15px 0; color: #333; font-size: 18px;">📅 Ingresos por Día</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;">
-    `;
-    
-    const diasOrdenados = Array.from(edificio.ingresosPorDia.entries())
-      .sort((a, b) => b[0].localeCompare(a[0])); // Más reciente primero
-    
-    diasOrdenados.forEach(([fecha, ordenes]) => {
-      html += `
-        <div style="background: #f8f9fa; padding: 12px; border-radius: 8px; text-align: center; 
-             border-left: 4px solid #667eea;">
-          <div style="font-size: 12px; color: #666; margin-bottom: 5px;">${fecha}</div>
-          <div style="font-size: 24px; font-weight: bold; color: #667eea;">${ordenes.length}</div>
-          <div style="font-size: 11px; color: #999;">OT${ordenes.length > 1 ? 's' : ''}</div>
-        </div>
-      `;
-    });
-    
-    html += `
-        </div>
-      </div>
-    `;
-  }
-  
-  // Alarmas FMS relacionadas
-  if (edificio.alarmas.length > 0) {
-    html += `
-      <div class="panel-alarmas-fms" style="margin-bottom: 25px; background: #fff3cd; 
-           padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12;">
-        <h3 style="margin: 0 0 15px 0; color: #856404; font-size: 18px;">
-          🚨 Alarmas FMS Activas (${edificio.alarmas.length})
-        </h3>
-        <div style="max-height: 200px; overflow-y: auto;">
-    `;
-    
-    edificio.alarmas.forEach(alarma => {
-      html += `
-        <div style="background: white; padding: 10px; margin-bottom: 8px; border-radius: 6px; 
-             border: 1px solid #ffeeba;">
-          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; font-size: 13px;">
-            <div><strong>Tipo:</strong> ${alarma.elementType || '-'}</div>
-            <div><strong>Código:</strong> ${alarma.elementCode || '-'}</div>
-            <div><strong>Daño:</strong> ${alarma.damage || '-'}</div>
-            <div><strong>Creación:</strong> ${alarma.creationDate || '-'}</div>
-          </div>
-        </div>
-      `;
-    });
-    
-    html += `
-        </div>
-      </div>
-    `;
-  }
-  
-  // Lista de órdenes técnicas
-  html += `
-    <div class="panel-ordenes">
-      <h3 style="margin: 0 0 15px 0; color: #333; font-size: 18px;">📋 Órdenes Técnicas</h3>
-      <div class="table-container">
-        <table style="width: 100%; font-size: 13px;">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Caso</th>
-              <th>OT</th>
-              <th>Diagnóstico</th>
-              <th>Tipo</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-  `;
-  
-  edificio.casos.forEach(orden => {
-    const fecha = orden['Fecha de creación'] || orden['Fecha/Hora de apertura'] || '-';
-    const caso = orden['Número del caso'] || orden['Caso Externo'] || '-';
-    const ot = orden['Número de orden de trabajo'] || orden['Número de cita'] || '-';
-    const diag = orden['Diagnostico Tecnico'] || orden['Diagnóstico Técnico'] || '-';
-    const tipo = orden['Tipo de trabajo: Nombre de tipo de trabajo'] || '-';
-    const estado = orden['Estado'] || '-';
-    
-    const isCATEC = String(tipo).toUpperCase().includes('CATEC');
-    const tipoBadge = isCATEC ? 
-      '<span class="badge badge-success">CATEC</span>' : 
-      '<span class="badge badge-secondary">Normal</span>';
-    
-    html += `
-      <tr>
-        <td>${String(fecha).substring(0, 10)}</td>
-        <td>${caso}</td>
-        <td>${ot}</td>
-        <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" 
-            title="${diag}">${diag}</td>
-        <td>${tipoBadge}</td>
-        <td>${estado}</td>
-      </tr>
-    `;
-  });
-  
-  html += `
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-  `;
-  
-
-// Abrir modal (IDs correctos)
-const backdrop  = document.getElementById('edificioBackdrop');
-const modalTitle = document.getElementById('edificioModalTitle');
-const modalBody  = document.getElementById('edificioModalBody');
-
-if (backdrop && modalTitle && modalBody) {
-  modalTitle.textContent = `🏢 Edificio: ${edificio.direccion}`;
-  modalBody.innerHTML = html;
-  backdrop.style.display = 'block';   // <- se muestra el modal
-}
-
-
-
 
 
 // C) NUEVA PESTAÑA FMS CON FILTRADO COMPLETO
@@ -2632,14 +2622,26 @@ function verDetalleFMS(idx) {
   `;
   
   // Abrir modal
-  const modal = document.getElementById('detailModal');
+  const backdrop = document.getElementById('modalBackdrop');
   const modalTitle = document.getElementById('modalTitle');
   const modalBody = document.getElementById('modalBody');
-  
-  if (modal && modalTitle && modalBody) {
+  const modalFilters = document.getElementById('modalFilters');
+  const modalFooter = document.getElementById('modalFooter');
+
+  if (backdrop && modalTitle && modalBody) {
     modalTitle.textContent = `🚨 FMS: ${fmsItem.elementType} - ${fmsItem.elementCode}`;
     modalBody.innerHTML = html;
-    modal.style.display = 'block';
+    if (modalFilters) modalFilters.style.display = 'none';
+    if (modalFooter) {
+      modalFooter.innerHTML = `
+        <div></div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
+        </div>`;
+    }
+
+    backdrop.classList.add('show');
+    document.body.classList.add('modal-open');
   }
 }
 
@@ -3192,17 +3194,17 @@ function populateFilters() {
   const cmtsSelect = document.getElementById('filterCMTS');
   cmtsSelect.innerHTML = '<option value="">Todos</option>' + cmtsList.sort().map(c => `<option value="${c}">${c}</option>`).join('');
 
-  const zoneNames = [...new Set(
-    (currentData.zonas || [])
-      .map(z => z.zona)
-      .filter(Boolean)
-  )];
-  initializeZoneFilterOptions(zoneNames);
+  initializeZoneFilterOptions(currentData.zonas || [], {
+    resetSelection: true,
+    resetSearch: true
+  });
 }
 
 function applyFilters() {
   if (!currentData) return;
-  
+
+  const previousSelectedZones = Array.from(zoneFilterState.selected);
+
   const catecEl = document.getElementById('filterCATEC');
   const excludeCatecEl = document.getElementById('filterExcludeCATEC');
 
@@ -3248,7 +3250,17 @@ function applyFilters() {
   window.currentCMTSData = cmtsFiltered;
   allZones = analyzed;
   allCMTS = cmtsFiltered;
-  
+
+  const selectionTrimmed = initializeZoneFilterOptions(analyzed, {
+    resetSelection: false,
+    resetSearch: false
+  });
+
+  if (selectionTrimmed && previousSelectedZones.length && zoneFilterState.selected.size < previousSelectedZones.length) {
+    applyFilters();
+    return;
+  }
+
   document.getElementById('btnExportExcel').disabled = analyzed.length === 0 && filtered.length === 0;
   document.getElementById('btnExportExcelZonas').disabled = analyzed.length === 0;
   
@@ -3256,6 +3268,11 @@ function applyFilters() {
   document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
   document.getElementById('edificiosPanel').innerHTML = UIRenderer.renderEdificios(filtered);
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
+  const fmsPanelEl = document.getElementById('fmsPanel');
+  if (fmsPanelEl) {
+    const fmsMap = dataProcessor ? dataProcessor.fmsMap : new Map();
+    fmsPanelEl.innerHTML = FMSPanel.render(filtered, fmsMap);
+  }
 }
 
 function resetFiltersState() {
@@ -3522,6 +3539,45 @@ function showEdificioDetail(idx) {
 function closeEdificioModal() {
   document.getElementById('edificioBackdrop').classList.remove('show');
   document.body.classList.remove('modal-open');
+}
+
+function exportEdificioDetalle() {
+  const titleEl = document.getElementById('edificioModalTitle');
+  const title = titleEl ? titleEl.textContent || '' : '';
+  if (!title || !title.startsWith('🏢 Edificio: ')) {
+    toast('Seleccioná un edificio para exportar');
+    return;
+  }
+
+  const direccion = title.replace('🏢 Edificio: ', '').trim();
+  const edificios = Array.isArray(window.edificiosData) ? window.edificiosData : [];
+  const edificio = edificios.find(e => (e.direccion || '').trim() === direccion);
+
+  if (!edificio) {
+    toast('No hay datos del edificio');
+    return;
+  }
+
+  const casos = Array.isArray(edificio.casos) ? edificio.casos : [];
+  if (!casos.length) {
+    toast('El edificio no tiene órdenes para exportar');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const usedNames = new Set();
+  appendSheet(wb, XLSX.utils.json_to_sheet(casos), 'Edificio_OTs', usedNames);
+
+  const safeSlug = (direccion.normalize ? direccion.normalize('NFD') : direccion)
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40) || 'Edificio';
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `Edificio_${safeSlug}_${fecha}.xlsx`);
+  toast('✓ Edificio exportado');
 }
 
 function openModal(zoneIdx) {
