@@ -20,6 +20,7 @@
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+  --radius-pill: 999px;
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
@@ -362,9 +363,9 @@ body {
 
 .zone-option {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px;
   border-radius: var(--radius-sm);
   font-size: 0.8125rem;
   color: var(--text-primary);
@@ -379,6 +380,69 @@ body {
 .zone-option input {
   width: 16px;
   height: 16px;
+}
+
+.zone-option__content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.zone-option__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.zone-option__name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.zone-option__count {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: rgba(0, 120, 212, 0.08);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  font-weight: 600;
+}
+
+.zone-option__diagnostics {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.zone-option__diagnostic {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.zone-option__diagnostic-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zone-option__diagnostic-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.zone-option__diagnostics--empty {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
 }
 
 .zone-multiselect__empty {

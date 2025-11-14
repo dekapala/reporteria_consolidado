@@ -237,48 +237,20 @@
     <div id="zonasPanel" class="tab-panel active">
       <div class="loading-message"><p>Los datos de zonas aparecerán aquí</p></div>
     </div>
-    <div id="cmtsPanel" class="tab-panel"></div>
-    <div id="edificiosPanel" class="tab-panel"></div>
-    <div id="equiposPanel" class="tab-panel"></div>
-    <div id="fmsPanel" class="tab-panel"></div>
+    <div id="cmtsPanel" class="tab-panel">
+      <div class="loading-message"><p>Los datos agrupados por CMTS aparecerán aquí</p></div>
+    </div>
+    <div id="edificiosPanel" class="tab-panel">
+      <div class="loading-message"><p>Los datos de edificios aparecerán aquí</p></div>
+    </div>
+    <div id="equiposPanel" class="tab-panel">
+      <div class="loading-message"><p>Los equipos por zona aparecerán aquí</p></div>
+    </div>
+    <div id="fmsPanel" class="tab-panel">
+      <div class="loading-message"><p>Los datos FMS aparecerán aquí</p></div>
+    </div>
   </div>
 </section>
-
-
-        <div class="tabs-content">
-          <div class="tab-panel active" id="zonasPanel">
-            <div class="loading-message">
-              <p>Los datos de zonas aparecerán aquí</p>
-            </div>
-          </div>
-          
-          <div class="tab-panel" id="cmtsPanel">
-            <div class="loading-message">
-              <p>Los datos agrupados por CMTS aparecerán aquí</p>
-            </div>
-          </div>
-          
-          <div class="tab-panel" id="edificiosPanel">
-            <div class="loading-message">
-              <p>Los datos de edificios aparecerán aquí</p>
-            </div>
-          </div>
-          
-          <div class="tab-panel" id="equiposPanel">
-            <div class="loading-message">
-              <p>Los equipos por zona aparecerán aquí</p>
-            </div>
-          </div>
-
-          <div class="tab-panel" id="fmsPanel">
-  <div class="loading-message">
-    <p>Los datos FMS aparecerán aquí</p>
-  </div>
-</div>
-
-          
-        </div>
-      </section>
 
       <div class="export-section">
         <button class="btn btn-success" id="btnExportExcel" disabled onclick="exportExcelVista()">
@@ -391,6 +363,9 @@
       </div>
       
       <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="exportEdificioDetalle()">
+          📥 Exportar órdenes
+        </button>
         <button class="btn btn-primary" onclick="closeEdificioModal()">
           Cerrar
         </button>
