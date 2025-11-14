@@ -379,6 +379,7 @@ class DataProcessor {
       let ordenesEnVentana = 0;
 
       const diagnosticos = new Set();
+      const damageCounts = new Map();
 
       z.ordenes.forEach(o => {
         const meta = o.__meta || {};
@@ -400,6 +401,12 @@ class DataProcessor {
 
         const diag = o['Diagnostico Tecnico'] || o['Diagnóstico Técnico'] || '';
         if (diag) diagnosticos.add(diag);
+
+        const damageKey = (diag && String(diag).trim()) || 'Sin diagnóstico';
+        if (!damageCounts.has(damageKey)) {
+          damageCounts.set(damageKey, { diagnostico: damageKey, count: 0 });
+        }
+        damageCounts.get(damageKey).count += 1;
       });
 
       const todayKey = DateUtils.toDayKey(today);
@@ -449,6 +456,7 @@ class DataProcessor {
         last7Days,
         last7DaysCounts,
         diagnosticos: Array.from(diagnosticos),
+        damageSummary: Array.from(damageCounts.values()).sort((a, b) => b.count - a.count),
         alarmas: alarmasFMS,
         alarmasActivas: alarmasActivas.length,
         tieneAlarma: alarmasActivas.length > 0,
