@@ -65,6 +65,114 @@ function findDispositivosColumn(rowObj){
        : null;
 }
 
+async function readFileAsUint8Array(file){
+  if (!file) return new Uint8Array();
+  if (file.arrayBuffer) {
+    const buf = await file.arrayBuffer();
+    return new Uint8Array(buf);
+  }
+  return await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(new Uint8Array(fr.result));
+    fr.onerror = reject;
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+function on(id, evt, handler){
+  const el = document.getElementById(id);
+  if (!el){
+    console.warn(`⚠️ No se encontró el elemento con id "${id}" para adjuntar ${evt}`);
+    return null;
+  }
+  el.addEventListener(evt, handler);
+  return el;
+}
+
+function normalizeMac(mac=''){
+  const clean = String(mac).trim().toUpperCase().replace(/[^0-9A-F]/g,'');
+  if (clean.length !== 12) return '';
+  return clean.match(/.{1,2}/g).join(':');
+}
+
+function normalizeDevice(device){
+  if (!device || typeof device !== 'object') return null;
+  const mapValue = (value) => (value === null || value === undefined) ? '' : String(value).trim();
+
+  const macRaw = device.mac || device.macAddress || device.mac_address || device.MAC || device.macAddressRaw || '';
+  const macFormatted = (typeof TextUtils !== 'undefined' && TextUtils?.formatMac)
+    ? TextUtils.formatMac(macRaw)
+    : (normalizeMac(macRaw) || mapValue(macRaw));
+  const macValue = mapValue(macFormatted);
+  const serialNumber = mapValue(device.serialNumber || device.serial || device.serie || device.sn || device.numeroSerie);
+  const model = mapValue(device.model || device.modelo);
+  const category = mapValue(device.category || device.brand || device.marca);
+  const brand = mapValue(device.brand || device.category || device.marca || category);
+  const technology = mapValue(device.technology || device.description || device.detalle);
+  const type = mapValue(device.type || device.tipo);
+
+  if (!(macValue || serialNumber || model || category || technology || type || brand)) {
+    return null;
+  }
+
+  return {
+    macAddress: macValue,
+    serialNumber,
+    model,
+    category,
+    technology,
+    type,
+    brand,
+    mac: macValue
+  };
+}
+
+function pickPreferredDevice(devs=[]){
+  if (!Array.isArray(devs) || !devs.length) return null;
+
+  const normalizedDevices = devs
+    .map(normalizeDevice)
+    .filter(Boolean);
+
+  if (!normalizedDevices.length) return null;
+
+  const withMac = normalizedDevices.find(d => d.mac);
+  if (withMac) return withMac;
+
+  const withModel = normalizedDevices.find(d => d.model);
+  if (withModel) return withModel;
+
+  return normalizedDevices[0];
+}
+
+function ensureOrderDeviceMeta(order){
+  if (!order || typeof order !== 'object') return null;
+
+  const meta = order.__meta = order.__meta || {};
+
+  let dispositivos = [];
+
+  if (Array.isArray(meta.dispositivos) && meta.dispositivos.length) {
+    dispositivos = meta.dispositivos;
+  } else {
+    const colInfo = findDispositivosColumn(order);
+    if (colInfo && order[colInfo]) {
+      dispositivos = TextUtils.parseDispositivosJSON(order[colInfo]);
+    }
+  }
+
+  const normalizedDevices = Array.isArray(dispositivos)
+    ? dispositivos.map(normalizeDevice).filter(Boolean)
+    : [];
+
+  meta.dispositivos = normalizedDevices;
+
+  const device = pickPreferredDevice(normalizedDevices);
+  meta.device = device || null;
+
+  return meta.device;
+}
+
 const DateUtils = {
   parse(str) {
     if (!str) return null;
@@ -106,19 +214,19 @@ const NumberUtils = {
   }
 };
 
-const TextUtils = {
+const TextUtils = window.TextUtils || {
   normalize(text) {
-    return String(text||'')
+    return String(text || '')
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g,'')
+      .replace(/[\u0300-\u036f]/g, '')
       .trim();
   },
 
-    
   matches(text, query) {
     return this.normalize(text).includes(this.normalize(query));
   },
+
   matchesMultiple(text, queries) {
     const normalized = this.normalize(text);
     return queries.some(q => normalized.includes(this.normalize(q)));
@@ -352,6 +460,145 @@ const OrderTypeClassifier = {
     return stats;
   }
 };
+window.TextUtils = TextUtils;
+
+function buildEquiposFromSheet(rows) {
+  const equipos = [];
+  if (!Array.isArray(rows)) return equipos;
+
+  rows.forEach(row => {
+    if (!row || typeof row !== 'object') return;
+
+    const col = findDispositivosColumn(row);
+    const raw = (col && row[col])
+      || row['Informacion Dispositivos']
+      || row['Información Dispositivos']
+      || row['Informacion_Dispositivos']
+      || row['info_dispositivos']
+      || '';
+
+    if (!raw) return;
+
+    const dispositivos = TextUtils.parseDispositivosJSON(raw);
+    if (!Array.isArray(dispositivos) || !dispositivos.length) return;
+
+    const fecha = row['Fecha']
+      || row['Fecha de creación']
+      || row['Fecha/Hora de apertura']
+      || row['Fecha de inicio']
+      || '';
+
+    const zona = row['Zona/CAC']
+      || row['Zona Tecnica HFC']
+      || row['Zona Tecnica FTTH']
+      || row['Zona Tecnica']
+      || row['Zona']
+      || '';
+
+    const territorio = row['Territorio de servicio: Nombre'] || row['Territorio'] || '';
+
+    const caso = row['Número del caso']
+      || row['Numero del caso']
+      || row['Caso Externo']
+      || row['Caso']
+      || row['External Case Id']
+      || '';
+
+    const numeroOrden = row['Numero Orden']
+      || row['Número Orden']
+      || row['Número de cita']
+      || row['Numero de cita']
+      || row['Orden']
+      || row['Orden de trabajo']
+      || '';
+
+    const sistema = TextUtils.detectarSistema(caso);
+
+    const clean = (value) => {
+      if (value === null || value === undefined) return '';
+      return String(value).trim();
+    };
+
+    dispositivos.forEach(d => {
+      const mac = TextUtils.formatMac(d.macAddress || d.serialNumber);
+      const tipoValue = clean(d.type) || clean(d.description);
+      equipos.push({
+        Zona: zona || '',
+        Territorio: territorio || '',
+        Caso: caso || '',
+        Sistema: sistema || '',
+        SerialNumber: clean(d.serialNumber || d.serial),
+        MAC: mac || '',
+        Modelo: clean(d.model),
+        Tipo: tipoValue,
+        Marca: clean(d.category),
+        Categoria: clean(d.category),
+        Descripcion: clean(d.description),
+        Fecha: fecha || '',
+        NumeroOrden: numeroOrden || ''
+      });
+    });
+  });
+
+  return equipos;
+}
+
+function enrichRowWithDeviceInfo(row) {
+  if (!row || typeof row !== 'object') return row;
+
+  const needModelo = !row['Modelo'];
+  const needMac = !row['MAC'];
+  const needTipo = !row['Tipo'];
+
+  if (!(needModelo || needMac || needTipo)) return row;
+
+  const meta = row.__meta = row.__meta || {};
+  let device = ensureOrderDeviceMeta(row);
+
+  if (!device) {
+    const fallback = Array.isArray(meta.dispositivos) && meta.dispositivos.length
+      ? meta.dispositivos[0]
+      : null;
+    if (fallback) {
+      device = fallback;
+    }
+  }
+
+  if (!device) {
+    const col = findDispositivosColumn(row);
+    const raw = (col && row[col])
+      || row['Informacion Dispositivos']
+      || row['Información Dispositivos']
+      || row['Informacion_Dispositivos']
+      || row['info_dispositivos']
+      || '';
+
+    const parsed = TextUtils.parseDispositivosJSON(raw);
+    if (parsed.length) {
+      const normalizedList = parsed.map(normalizeDevice).filter(Boolean);
+      if (normalizedList.length) {
+        meta.dispositivos = normalizedList;
+        meta.device = normalizedList[0];
+        device = meta.device;
+      } else {
+        device = parsed[0];
+      }
+    }
+  }
+
+  if (!device) return row;
+
+  const modelo = device.model || device.Modelo || device.modelo || '';
+  const tipo = device.type || device.Tipo || device.technology || device.description || '';
+  const macCandidate = device.mac || device.MAC || device.macAddress || device.serialNumber || device.SerialNumber || '';
+  const formattedMac = TextUtils.formatMac(macCandidate);
+
+  if (needModelo && modelo) row['Modelo'] = modelo;
+  if (needTipo && tipo) row['Tipo'] = tipo;
+  if (needMac && formattedMac) row['MAC'] = formattedMac;
+
+  return row;
+}
 
 
 
@@ -715,11 +962,45 @@ class DataProcessor {
         cellFormula: false,
         raw: false
       });
-      
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const range = XLSX.utils.decode_range(ws['!ref']);
+
+      if (!wb.SheetNames || wb.SheetNames.length === 0) {
+        throw new Error('El archivo no contiene hojas');
+      }
+
+      const firstSheetName = wb.SheetNames[0];
+      const ws = wb.Sheets[firstSheetName];
+      if (!ws) {
+        throw new Error('No se pudo abrir la primera hoja');
+      }
+
+      let ref = ws['!ref'];
+      if (!ref) {
+        const keys = Object.keys(ws).filter(k => k[0] !== '!');
+        if (keys.length === 0) {
+          throw new Error('La hoja está vacía');
+        }
+        let minR = Infinity, minC = Infinity, maxR = 0, maxC = 0;
+        for (const addr of keys) {
+          const { r, c } = XLSX.utils.decode_cell(addr);
+          if (r < minR) minR = r;
+          if (c < minC) minC = c;
+          if (r > maxR) maxR = r;
+          if (c > maxC) maxC = c;
+        }
+        ref = XLSX.utils.encode_range({ s: { r: minR, c: minC }, e: { r: maxR, c: maxC } });
+        ws['!ref'] = ref;
+      }
+
+      let range;
+      try {
+        range = XLSX.utils.decode_range(ws['!ref']);
+      } catch (err) {
+        range = { s: { r: 0, c: 0 }, e: { r: 999, c: 50 } };
+        ws['!ref'] = XLSX.utils.encode_range(range);
+      }
       
       let headerRow = 0;
+      let headerDetected = false;
       for (let R = 0; R <= 20; R++) {
         let hasContent = false;
         for (let C = 0; C <= 15; C++) {
@@ -729,12 +1010,14 @@ class DataProcessor {
             const cellValue = String(cell.v).toLowerCase();
             if (cellValue.includes('zona') && cellValue.includes('tecnica')) {
               headerRow = R;
+              headerDetected = true;
               console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
               hasContent = true;
               break;
             }
             if (cellValue.includes('numero') && (cellValue.includes('caso') || cellValue.includes('cuenta'))) {
               headerRow = R;
+              headerDetected = true;
               console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
               hasContent = true;
               break;
@@ -743,7 +1026,12 @@ class DataProcessor {
         }
         if (hasContent) break;
       }
-      
+
+      if (!headerDetected) {
+        headerRow = 0;
+        console.warn('⚠️ No se detectaron headers de zona/caso. Se usará la primera fila como encabezado.');
+      }
+
       console.log(`📋 Usando fila ${headerRow + 1} como headers`);
       
       range.s.r = headerRow;
@@ -780,51 +1068,67 @@ class DataProcessor {
   
   async loadCSV(file) {
     try {
-      const text = await file.text();
-      const lines = text.split('\n').filter(l => l.trim());
-      
-      if (lines.length < 2) {
+      const buffer = await readFileAsUint8Array(file);
+      const decoder = new TextDecoder('utf-8');
+      const text = decoder.decode(buffer || new Uint8Array());
+
+      if (!text.trim()) {
         return {success: false, error: 'CSV vacío'};
       }
-      
-      const parseCSVLine = (line) => {
-        const result = [];
-        let current = '';
-        let inQuotes = false;
-        
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          
-          if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if (char === ',' && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-          } else {
-            current += char;
-          }
-        }
-        result.push(current.trim());
-        return result;
-      };
-      
-      const headers = parseCSVLine(lines[0]);
+
+      const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const rows = [];
-      
-      for (let i = 1; i < lines.length; i++) {
-        const values = parseCSVLine(lines[i]);
+      let currentField = '';
+      let currentRow = [];
+      let inQuotes = false;
+
+      for (let i = 0; i < normalizedText.length; i++) {
+        const char = normalizedText[i];
+
+        if (char === '"') {
+          if (inQuotes && normalizedText[i + 1] === '"') {
+            currentField += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          currentRow.push(currentField.trim());
+          currentField = '';
+        } else if (char === '\n' && !inQuotes) {
+          currentRow.push(currentField.trim());
+          rows.push(currentRow);
+          currentRow = [];
+          currentField = '';
+        } else {
+          currentField += char;
+        }
+      }
+
+      if (currentField.length || currentRow.length) {
+        currentRow.push(currentField.trim());
+        rows.push(currentRow);
+      }
+
+      if (rows.length < 2) {
+        return {success: false, error: 'CSV vacío'};
+      }
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1).filter(r => r.some(cell => cell !== ''));
+      const mappedRows = dataRows.map(values => {
         const obj = {};
         headers.forEach((h, idx) => {
           obj[h] = values[idx] || '';
         });
-        rows.push(obj);
-      }
-      
-      console.log(`✅ CSV Alarmas: ${rows.length} alarmas leídas`);
-      this.fmsData = rows;
+        return obj;
+      });
+
+      console.log(`✅ CSV Alarmas: ${mappedRows.length} alarmas leídas`);
+      this.fmsData = mappedRows;
       this.processFMS();
-      
-      return {success: true, rows: rows.length};
+
+      return {success: true, rows: mappedRows.length};
     } catch (e) {
       console.error('Error loading CSV:', e);
       return {success: false, error: e.message};
@@ -860,13 +1164,19 @@ class DataProcessor {
   
   processFMS() {
     if (!this.fmsData) return;
-    
+
     console.log('Procesando alarmas FMS...');
-    
+
+    if (!(this.fmsMap instanceof Map)) {
+      this.fmsMap = new Map();
+    } else {
+      this.fmsMap.clear();
+    }
+
     this.fmsData.forEach(f => {
       const zonaTecnica = String(f['networkElement.technicalZone'] || '').trim();
       if (!zonaTecnica) return;
-      
+
       const alarma = {
         eventId: f['eventId'] || '',
         type: f['type'] || '',
@@ -933,25 +1243,27 @@ class DataProcessor {
   
   processZones(rows) {
     const zoneGroups = new Map();
-    
+
     rows.forEach(r => {
-      const {zonaPrincipal, tipo} = this.getZonaPrincipal(r);
+      const order = enrichRowWithDeviceInfo(r);
+      ensureOrderDeviceMeta(order);
+      const {zonaPrincipal, tipo} = this.getZonaPrincipal(order);
       if (!zonaPrincipal) return;
-      
+
       if (!zoneGroups.has(zonaPrincipal)) {
         zoneGroups.set(zonaPrincipal, {
           zona: zonaPrincipal,
           tipo: tipo,
-          zonaHFC: r['Zona Tecnica HFC'] || r['Zona Tecnica'] || '',
-          zonaFTTH: r['Zona Tecnica FTTH'] || '',
-          territorio: r['Territorio de servicio: Nombre'] || r['Territorio'] || '',
+          zonaHFC: order['Zona Tecnica HFC'] || order['Zona Tecnica'] || '',
+          zonaFTTH: order['Zona Tecnica FTTH'] || '',
+          territorio: order['Territorio de servicio: Nombre'] || order['Territorio'] || '',
           ordenes: []
         });
       }
-      
-      zoneGroups.get(zonaPrincipal).ordenes.push(r);
+
+      zoneGroups.get(zonaPrincipal).ordenes.push(order);
     });
-    
+
     return Array.from(zoneGroups.values());
   }
   
@@ -1149,6 +1461,79 @@ class DataProcessor {
     
     return Array.from(territoriosMap.values())
       .sort((a, b) => b.totalOTs - a.totalOTs);
+  }
+}
+
+// ====== Persistencia de filtros (localStorage) ======
+const FilterPersistence = {
+  key: 'panel-v5-filters',
+  load() {
+    try { return JSON.parse(localStorage.getItem(this.key) || '{}'); }
+    catch { return {}; }
+  },
+  save(data) {
+    try { localStorage.setItem(this.key, JSON.stringify(data || {})); }
+    catch (e) { console.warn('No se pudo guardar filtros', e); }
+  }
+};
+
+function persistFilters() {
+  const snapshot = {
+    // toggles / selects principales
+    catec: document.getElementById('filterCATEC')?.checked || false,
+    excludeCatec: document.getElementById('filterExcludeCATEC')?.checked || false,
+    showAllStates: document.getElementById('showAllStates')?.checked || false,
+    ftth: document.getElementById('filterFTTH')?.checked || false,
+    excludeFTTH: document.getElementById('filterExcludeFTTH')?.checked || false,
+    nodoEstado: document.getElementById('filterNodoEstado')?.value || '',
+    cmts: document.getElementById('filterCMTS')?.value || '',
+    days: parseInt(document.getElementById('daysWindow')?.value || CONFIG.defaultDays, 10),
+    territorio: document.getElementById('filterTerritorio')?.value || '',
+    sistema: document.getElementById('filterSistema')?.value || '',
+    alarma: document.getElementById('filterAlarma')?.value || '',
+    quickSearch: document.getElementById('quickSearch')?.value || '',
+    ordenarPorIngreso: document.getElementById('ordenarPorIngreso')?.value || 'desc',
+
+    // multiselect de zonas
+    selectedZonas: Array.from(zoneFilterState?.selected || []),
+
+    // filtros del panel de equipos
+    equipoModelo: Array.isArray(Filters?.equipoModelo) ? Filters.equipoModelo : [],
+    equipoMarca: Filters?.equipoMarca || '',
+    equipoTerritorio: Filters?.equipoTerritorio || ''
+  };
+  FilterPersistence.save(snapshot);
+}
+
+function restoreFiltersToControls(saved = {}) {
+  const set = (id, prop, value) => {
+    const el = document.getElementById(id);
+    if (el != null) el[prop] = value;
+  };
+
+  set('filterCATEC','checked', !!saved.catec);
+  set('filterExcludeCATEC','checked', !!saved.excludeCatec);
+  set('showAllStates','checked', !!saved.showAllStates);
+  set('filterFTTH','checked', !!saved.ftth);
+  set('filterExcludeFTTH','checked', !!saved.excludeFTTH);
+  set('filterNodoEstado','value', saved.nodoEstado || '');
+  set('filterCMTS','value', saved.cmts || '');
+  set('daysWindow','value', String(saved.days || CONFIG.defaultDays));
+  set('filterTerritorio','value', saved.territorio || '');
+  set('filterSistema','value', saved.sistema || '');
+  set('filterAlarma','value', saved.alarma || '');
+  set('quickSearch','value', saved.quickSearch || '');
+  set('ordenarPorIngreso','value', saved.ordenarPorIngreso || 'desc');
+
+  // filtros de equipos
+  Filters.equipoModelo = Array.isArray(saved.equipoModelo) ? saved.equipoModelo : [];
+  Filters.equipoMarca = saved.equipoMarca || '';
+  Filters.equipoTerritorio = saved.equipoTerritorio || '';
+
+  // zonas seleccionadas (espera a que existan opciones)
+  if (Array.isArray(saved.selectedZonas) && saved.selectedZonas.length) {
+    Filters.selectedZonas = saved.selectedZonas;
+    zoneFilterState.selected = new Set(saved.selectedZonas);
   }
 }
 
@@ -1716,44 +2101,39 @@ const UIRenderer = {
 
   
   renderEquipos(ordenes) {
+    const equipos = buildEquiposFromSheet(ordenes);
+    if (!equipos.length) {
+      return '<div class="loading-message"><p>⚠️ No se encontraron equipos en las órdenes.</p></div>';
+    }
+
     const grupos = new Map();
     const territorios = new Set();
-
-    ordenes.forEach((o) => {
-      const zona = o['Zona Tecnica HFC'] || o['Zona Tecnica FTTH'] || '';
-      const territorio = o['Territorio de servicio: Nombre'] || '';
-      const numCaso = o['Número del caso'] || o['Caso Externo'] || '';
-      const sistema = TextUtils.detectarSistema(numCaso);
-
-      const colInfo = findDispositivosColumn(o);
-      const infoDispositivos = colInfo ? o[colInfo] : '';
-
-      const dispositivos = TextUtils.parseDispositivosJSON(infoDispositivos);
-      dispositivos.forEach(d => {
-        const item = {
-          zona,
-          territorio,
-          numCaso,
-          sistema,
-          serialNumber: d.serialNumber,
-          macAddress: d.macAddress,
-          tipo: d.description,
-          marca: d.category,
-          modelo: d.model
-        };
-        if (!grupos.has(zona)) grupos.set(zona, []);
-        grupos.get(zona).push(item);
-        if (territorio) territorios.add(territorio);
-      });
-    });
-
     const modelos = new Set();
     const marcas = new Set();
-    grupos.forEach(arr => {
-      arr.forEach(e => {
-        if (e.modelo) modelos.add(e.modelo);
-        if (e.marca) marcas.add(e.marca);
-      });
+
+    equipos.forEach(item => {
+      const zona = item.Zona || '';
+      const entry = {
+        zona,
+        territorio: item.Territorio || '',
+        numCaso: item.Caso || '',
+        sistema: item.Sistema || '',
+        serialNumber: item.SerialNumber || '',
+        macAddress: item.MAC || '',
+        tipo: item.Tipo || '',
+        marca: item.Marca || item.Categoria || '',
+        modelo: item.Modelo || '',
+        descripcion: item.Descripcion || '',
+        fecha: item.Fecha || '',
+        numeroOrden: item.NumeroOrden || ''
+      };
+
+      if (!grupos.has(zona)) grupos.set(zona, []);
+      grupos.get(zona).push(entry);
+
+      if (entry.territorio) territorios.add(entry.territorio);
+      if (entry.modelo) modelos.add(entry.modelo);
+      if (entry.marca) marcas.add(entry.marca);
     });
 
     const zonas = Array.from(grupos.keys()).sort((a, b) => a.localeCompare(b));
@@ -1764,7 +2144,7 @@ const UIRenderer = {
     if (!window.equiposOpen) window.equiposOpen = new Set();
 
     let html = '<div class="equipos-filters">';
-    
+
     html += '<div class="filter-group">';
     html += '<div class="filter-label">Filtrar por Modelo</div>';
     html += '<select id="filterEquipoModelo" class="input-select" multiple size="3" onchange="applyEquiposFilters()">';
@@ -1802,14 +2182,14 @@ const UIRenderer = {
     html += '</div>';
     html += '</div>';
 
-    let gruposFiltrados = new Map();
+    const gruposFiltrados = new Map();
     grupos.forEach((arr, zona) => {
       let filtrado = arr;
-      
+
       if (Filters.equipoModelo.length > 0) {
         filtrado = filtrado.filter(e => Filters.equipoModelo.includes(e.modelo));
       }
-      
+
       if (Filters.equipoMarca) {
         filtrado = filtrado.filter(e => e.marca === Filters.equipoMarca);
       }
@@ -1817,15 +2197,15 @@ const UIRenderer = {
       if (Filters.equipoTerritorio) {
         filtrado = filtrado.filter(e => e.territorio === Filters.equipoTerritorio);
       }
-      
+
       if (filtrado.length > 0) {
         gruposFiltrados.set(zona, filtrado);
       }
     });
 
     const zonasFiltradas = Array.from(gruposFiltrados.keys()).sort((a, b) => a.localeCompare(b));
-    
-    if (zonasFiltradas.length === 0) {
+
+    if (!zonasFiltradas.length) {
       html += '<div class="loading-message"><p>No hay equipos que coincidan con los filtros seleccionados</p></div>';
       return html;
     }
@@ -1837,11 +2217,11 @@ const UIRenderer = {
     zonasFiltradas.forEach((z) => {
       const arr = gruposFiltrados.get(z) || [];
       const open = window.equiposOpen.has(z);
-      html += `<tr class="clickable" onclick="toggleEquiposGrupo('${z.replace(/'/g, "\\'")}')">
-        <td><strong>${z || '-'}</strong></td>
-        <td class="number">${arr.length}</td>
-        <td><button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="event.stopPropagation(); exportEquiposGrupoExcel('${z.replace(/'/g, "\\'")}', true)">📥 Exportar</button></td>
-      </tr>`;
+      html += `<tr class="clickable" onclick="toggleEquiposGrupo('${z.replace(/'/g, "\'")}')">`;
+      html += `<td><strong>${z || '-'}</strong></td>`;
+      html += `<td class="number">${arr.length}</td>`;
+      html += `<td><button class="btn btn-secondary" style="padding:6px 12px; font-size:0.75rem;" onclick="event.stopPropagation(); exportEquiposGrupoExcel('${z.replace(/'/g, "\'")}', true)">📥 Exportar</button></td>`;
+      html += '</tr>';
 
       if (open) {
         html += `<tr><td colspan="3">`;
@@ -1851,15 +2231,15 @@ const UIRenderer = {
         arr.slice(0, 1000).forEach(e => {
           const badge = e.sistema === 'OPEN' ? '<span class="badge badge-open">OPEN</span>'
                        : e.sistema === 'FAN' ? '<span class="badge badge-fan">FAN</span>' : '';
-          html += `<tr>
-            <td style="font-family:monospace">${e.numCaso || ''}</td>
-            <td>${badge}</td>
-            <td style="font-family:monospace">${e.serialNumber || ''}</td>
-            <td style="font-family:monospace">${e.macAddress || ''}</td>
-            <td>${e.tipo || ''}</td>
-            <td>${e.marca || ''}</td>
-            <td>${e.modelo || ''}</td>
-          </tr>`;
+          html += `<tr>`;
+          html += `<td style="font-family:monospace">${e.numCaso || ''}</td>`;
+          html += `<td>${badge}</td>`;
+          html += `<td style="font-family:monospace">${e.serialNumber || ''}</td>`;
+          html += `<td style="font-family:monospace">${e.macAddress || ''}</td>`;
+          html += `<td>${e.tipo || ''}</td>`;
+          html += `<td>${e.marca || ''}</td>`;
+          html += `<td>${e.modelo || ''}</td>`;
+          html += '</tr>';
         });
         html += '</tbody></table></div></div>';
         html += `</td></tr>`;
@@ -1868,10 +2248,109 @@ const UIRenderer = {
 
     html += '</tbody></table></div></div>';
     html += `<p style="text-align:center;margin-top:12px;color:var(--text-secondary)">Total: ${zonasFiltradas.length} zonas • Click para expandir/colapsar</p>`;
-    
+
     window.equiposPorZona = gruposFiltrados;
     window.equiposPorZonaCompleto = grupos;
-    
+    window.equiposListado = equipos;
+
+    return html;
+  }
+};
+
+const FMSPanel = {
+  render(ordenes, fmsMap) {
+    if (!(fmsMap instanceof Map) || fmsMap.size === 0) {
+      return '<div class="loading-message"><p>⚠️ Cargá el archivo de alarmas FMS para ver resultados.</p></div>';
+    }
+
+    if (!Array.isArray(ordenes) || ordenes.length === 0) {
+      return '<div class="loading-message"><p>Sin resultados</p></div>';
+    }
+
+    const normalizedFmsMap = new Map();
+    fmsMap.forEach((alarms, zoneKey) => {
+      const baseKey = String(zoneKey || '').trim();
+      if (!baseKey) return;
+      if (!normalizedFmsMap.has(baseKey)) normalizedFmsMap.set(baseKey, alarms);
+      const upperKey = baseKey.toUpperCase();
+      if (!normalizedFmsMap.has(upperKey)) normalizedFmsMap.set(upperKey, alarms);
+    });
+
+    const aggregated = new Map();
+
+    ordenes.forEach(order => {
+      const candidates = new Set();
+      const meta = order.__meta || {};
+      if (meta.zona) candidates.add(meta.zona);
+      if (meta.zonaPrincipal) candidates.add(meta.zonaPrincipal);
+      if (meta.zonaHFC) candidates.add(meta.zonaHFC);
+      if (meta.zonaFTTH) candidates.add(meta.zonaFTTH);
+      const zonaHFC = pickFirstValue(order, ORDER_FIELD_KEYS.zonaHFC);
+      if (zonaHFC) candidates.add(zonaHFC);
+      const zonaFTTH = pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH);
+      if (zonaFTTH) candidates.add(zonaFTTH);
+
+      candidates.forEach(candidate => {
+        const base = String(candidate || '').trim();
+        if (!base) return;
+        const alarms = normalizedFmsMap.get(base) || normalizedFmsMap.get(base.toUpperCase());
+        if (!alarms || !alarms.length) return;
+        const storageKey = base.toUpperCase();
+        if (!aggregated.has(storageKey)) {
+          aggregated.set(storageKey, { zona: base, display: candidate, orders: [], alarms });
+        }
+        const entry = aggregated.get(storageKey);
+        if (!entry.display) entry.display = candidate;
+        entry.orders.push(order);
+        entry.alarms = alarms;
+      });
+    });
+
+    if (!aggregated.size) {
+      return '<div class="loading-message"><p>Sin resultados</p></div>';
+    }
+
+    const rows = Array.from(aggregated.values()).map(entry => {
+      const alarms = entry.alarms || [];
+      const activas = alarms.filter(a => a?.isActive).length;
+      const total = alarms.length;
+      const causal = getCausalForZona(entry.zona, entry.orders, fmsMap);
+      const latest = alarms.reduce((memo, alarm) => {
+        if (!alarm) return memo;
+        if (!memo) return alarm;
+        const currentDate = new Date(alarm.recoveryDate || alarm.creationDate || 0);
+        const memoDate = new Date(memo.recoveryDate || memo.creationDate || 0);
+        return currentDate > memoDate ? alarm : memo;
+      }, null);
+      const ultima = latest ? (latest.recoveryDate || latest.creationDate || '') : '';
+      return {
+        zona: entry.display || entry.zona,
+        activas,
+        total,
+        causal,
+        ultima: ultima || '—'
+      };
+    }).sort((a, b) => {
+      if (b.activas !== a.activas) return b.activas - a.activas;
+      if (b.total !== a.total) return b.total - a.total;
+      return (a.zona || '').localeCompare(b.zona || '');
+    });
+
+    let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
+    html += '<th>Zona</th><th class="number">Alarmas activas</th><th class="number">Total alarmas</th><th>Causal principal</th><th>Última actualización</th>';
+    html += '</tr></thead><tbody>';
+
+    rows.forEach(row => {
+      html += `<tr>
+        <td>${escapeHtml(row.zona || '')}</td>
+        <td class="number">${row.activas}</td>
+        <td class="number">${row.total}</td>
+        <td>${escapeHtml(row.causal || 'N/D')}</td>
+        <td>${escapeHtml(row.ultima || '—')}</td>
+      </tr>`;
+    });
+
+    html += '</tbody></table></div></div>';
     return html;
   }
 };
@@ -2668,14 +3147,13 @@ function toggleEquiposGrupo(zona){
 
 const ZONE_EXPORT_HEADERS = [
   'Fecha',
-  'ZonaHFC',
-  'ZonaFTTH',
-  'Territorio',
-  'Ubicacion',
+  'Zona/CAC',
   'Caso',
-  'NumeroOrden',
-  'NumeroOTuca',
-  'Diagnostico',
+  'Numero Orden',
+  'Diagnostico Tecnico',
+  'Tipo Trabajo',
+  'MAC',
+  'Modelo',
   'Tipo',
   'TipoTrabajo',
   'Estado1',
@@ -2821,6 +3299,25 @@ const ORDER_FIELD_KEYS = {
   ]
 };
 
+const ZONE_CAUSAL_KEYS = [
+  'Tipo de daño',
+  'Tipo de daño/causal',
+  'Tipo de daño / Causal',
+  'Tipo Daño',
+  'Tipo_Daño',
+  'Tipo dano',
+  'Causal',
+  'Causal reportada',
+  'Causal reclamo',
+  'Tipo de Causal',
+  'Daño',
+  'Damage',
+  'damageClassification',
+  'Damage Classification',
+  'incidentClassification',
+  'Incident Classification'
+];
+
 function pickFirstValue(obj, keys){
   if (!obj || !keys) return '';
   for (const key of keys){
@@ -2832,6 +3329,93 @@ function pickFirstValue(obj, keys){
     }
   }
   return '';
+}
+
+function getCausalSeverityScore(label){
+  if (!label) return 0;
+  const normalized = TextUtils.normalize(label);
+  if (normalized.includes('red') || normalized.includes('roj')) return 4;
+  if (normalized.includes('senal') || normalized.includes('signal')) return 3;
+  if (normalized.includes('client')) return 2;
+  if (normalized.includes('otro')) return 1;
+  return 0;
+}
+
+function getCausalForZona(zona, ots, fmsMap){
+  const counts = new Map();
+  const addValue = (value, weight = 1) => {
+    if (!value) return;
+    const label = String(value).trim();
+    if (!label) return;
+    const key = TextUtils.normalize(label) || label;
+    const current = counts.get(key) || { count: 0, severity: getCausalSeverityScore(label), label };
+    current.count += weight;
+    current.severity = Math.max(current.severity, getCausalSeverityScore(label));
+    if (!current.label) current.label = label;
+    counts.set(key, current);
+  };
+
+  if (Array.isArray(ots)) {
+    ots.forEach(order => {
+      const valor = pickFirstValue(order, ZONE_CAUSAL_KEYS);
+      if (valor) {
+        addValue(valor, 2);
+      }
+    });
+  }
+
+  const candidateZones = new Set();
+  if (zona) candidateZones.add(zona);
+
+  if (Array.isArray(ots)) {
+    ots.forEach(order => {
+      const meta = order.__meta || {};
+      if (meta.zona) candidateZones.add(meta.zona);
+      if (meta.zonaPrincipal) candidateZones.add(meta.zonaPrincipal);
+      if (meta.zonaHFC) candidateZones.add(meta.zonaHFC);
+      if (meta.zonaFTTH) candidateZones.add(meta.zonaFTTH);
+      const zonaHFC = pickFirstValue(order, ORDER_FIELD_KEYS.zonaHFC);
+      if (zonaHFC) candidateZones.add(zonaHFC);
+      const zonaFTTH = pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH);
+      if (zonaFTTH) candidateZones.add(zonaFTTH);
+    });
+  }
+
+  const normalizedFmsMap = new Map();
+  if (fmsMap instanceof Map) {
+    fmsMap.forEach((alarms, zoneKey) => {
+      const baseKey = String(zoneKey || '').trim();
+      if (!baseKey) return;
+      if (!normalizedFmsMap.has(baseKey)) normalizedFmsMap.set(baseKey, alarms);
+      const upperKey = baseKey.toUpperCase();
+      if (!normalizedFmsMap.has(upperKey)) normalizedFmsMap.set(upperKey, alarms);
+    });
+  }
+
+  candidateZones.forEach(candidate => {
+    const base = String(candidate || '').trim();
+    if (!base) return;
+    const alarms = normalizedFmsMap.get(base) || normalizedFmsMap.get(base.toUpperCase());
+    if (!alarms || !alarms.length) return;
+    alarms.forEach(alarm => {
+      const causal = alarm?.damageClassification || alarm?.damage || alarm?.incidentClassification || alarm?.type || '';
+      addValue(causal, alarm?.isActive ? 2 : 1);
+    });
+  });
+
+  if (!counts.size) return 'N/D';
+
+  let selected = { label: 'N/D', count: 0, severity: -1 };
+  counts.forEach(info => {
+    if (
+      info.count > selected.count ||
+      (info.count === selected.count && info.severity > selected.severity)
+    ) {
+      selected = info;
+    }
+  });
+
+  return selected.label || 'N/D';
 }
 
 function buildUbicacion(order){
@@ -2857,33 +3441,29 @@ function buildUbicacion(order){
 
 function buildOrderExportRow(order, zoneInfo){
   if (!order) return null;
+
+  ensureOrderDeviceMeta(order);
   const meta = order.__meta || {};
+  const device = meta.device || {};
 
   let fecha = pickFirstValue(order, ORDER_FIELD_KEYS.fecha);
   if (!fecha && meta.fecha){
     fecha = DateUtils.format(meta.fecha);
   }
 
-  const zonaHFC = meta.zonaHFC || zoneInfo?.zonaHFC || pickFirstValue(order, ORDER_FIELD_KEYS.zonaHFC) || zoneInfo?.zona || '';
-  const zonaFTTH = meta.zonaFTTH || zoneInfo?.zonaFTTH || pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH);
-  const territorio = meta.territorio || pickFirstValue(order, ORDER_FIELD_KEYS.territorio);
-  const ubicacion = buildUbicacion(order);
+  const zonaCAC = meta.zona ||
+                   zoneInfo?.zona ||
+                   meta.zonaHFC ||
+                   meta.zonaFTTH ||
+                   zoneInfo?.zonaHFC ||
+                   zoneInfo?.zonaFTTH ||
+                   pickFirstValue(order, ORDER_FIELD_KEYS.zonaHFC) ||
+                   pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH);
+
   const caso = meta.numeroCaso || pickFirstValue(order, ORDER_FIELD_KEYS.caso);
   const numeroOrden = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOrden);
-  const numeroOTuca = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOTuca);
-  const diagnostico = pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
-  const tipo = pickFirstValue(order, ORDER_FIELD_KEYS.tipo) || zoneInfo?.tipo || '';
+  const diagnosticoTecnico = extractDiagnosticoTecnico(order) || pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
   const tipoTrabajo = pickFirstValue(order, ORDER_FIELD_KEYS.tipoTrabajo);
-  const estado1 = pickFirstValue(order, ORDER_FIELD_KEYS.estado1);
-  let estado2 = pickFirstValue(order, ORDER_FIELD_KEYS.estado2);
-  let estado3 = pickFirstValue(order, ORDER_FIELD_KEYS.estado3);
-  if (estado3 && estado2 && estado3 === estado2){
-    const alternativas = ['Estado final', 'Estado gestión', 'Estado Gestion', 'Estado detalle'];
-    const altern = pickFirstValue(order, alternativas);
-    if (altern && altern !== estado2){
-      estado3 = altern;
-    }
-  }
 
   let mac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
   let modelo = '';
@@ -2909,6 +3489,11 @@ function buildOrderExportRow(order, zoneInfo){
     modelo = String(device.model || device.modelo || '').trim();
     tipoEquipo = String(device.type || device.tipo || '').trim();
   }
+  const formattedMac = TextUtils.formatMac(mac);
+  mac = device.mac || formattedMac || mac || '';
+  const modelo = device.model || '';
+  const tipoEquipo = device.type || device.technology || pickFirstValue(order, ORDER_FIELD_KEYS.tipo);
+  const tipoDano = zoneInfo?.causalPrincipal || 'N/D';
 
   return {
     Fecha: fecha || '',
@@ -2934,6 +3519,8 @@ function buildOrderExportRow(order, zoneInfo){
 function buildZoneExportRows(zoneData){
   if (!zoneData) return [];
   const source = zoneData.ordenesOriginales || zoneData.ordenes || [];
+  const causalPrincipal = zoneData.causalPrincipal || getCausalForZona(zoneData.zona, source, dataProcessor?.fmsMap);
+  zoneData.causalPrincipal = causalPrincipal;
   return source
     .map(order => buildOrderExportRow(order, zoneData))
     .filter(row => row && ZONE_EXPORT_HEADERS.some(header => (row[header] || '').toString().trim().length));
@@ -2977,11 +3564,25 @@ function exportEquiposGrupoExcel(zona, useFiltered = false){
   
   const arr = source.get(zona) || [];
   if (!arr.length) return toast('No hay equipos en esa zona');
-  
+
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(arr);
+  const exportRows = arr.map(e => ({
+    Zona: e.zona || zona || '',
+    Territorio: e.territorio || '',
+    Caso: e.numCaso || '',
+    Sistema: e.sistema || '',
+    Serial: e.serialNumber || '',
+    MAC: e.macAddress || '',
+    Tipo: e.tipo || '',
+    Marca: e.marca || '',
+    Modelo: e.modelo || '',
+    Descripcion: e.descripcion || '',
+    Fecha: e.fecha || '',
+    NumeroOrden: e.numeroOrden || ''
+  }));
+  const ws = XLSX.utils.json_to_sheet(exportRows);
   XLSX.utils.book_append_sheet(wb, ws, `Equipos_${zona || 'NA'}`);
-  
+
   const filterInfo = useFiltered && (Filters.equipoModelo.length > 0 || Filters.equipoMarca || Filters.equipoTerritorio)
     ? `_filtrado`
     : '';
@@ -3036,61 +3637,66 @@ let allZones = [];
 let allCMTS = [];
 let currentZone = null;
 let selectedOrders = new Set();
+let savedFiltersSnapshot = {};
+let edificiosPanelListenerBound = false;
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
 });
 
 function setupEventListeners() {
-  document.getElementById('fileConsolidado1').addEventListener('change', e => loadFile(e, 1));
-  document.getElementById('fileConsolidado2').addEventListener('change', e => loadFile(e, 2));
-  document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
-  document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
-  
+  on('fileConsolidado1', 'change', e => loadFile(e, 1));
+  on('fileConsolidado2', 'change', e => loadFile(e, 2));
+  on('fileNodos', 'change', e => loadFile(e, 3));
+  on('fileFMS', 'change', e => loadFile(e, 4));
+
   const filterCatec = document.getElementById('filterCATEC');
   const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
-
-  if (filterCatec && filterExcludeCatec) {
-    filterCatec.addEventListener('change', e => {
-      if (e.target.checked) {
-        filterExcludeCatec.checked = false;
-      }
-      applyFilters();
-    });
-
-    filterExcludeCatec.addEventListener('change', e => {
-      if (e.target.checked) {
-        filterCatec.checked = false;
-      }
-      applyFilters();
-    });
-  }
-  document.getElementById('showAllStates').addEventListener('change', applyFilters);
-  document.getElementById('filterFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
+  on('filterCATEC', 'change', e => {
+    if (e.target.checked && filterExcludeCatec) {
+      filterExcludeCatec.checked = false;
+    }
     applyFilters();
   });
-  document.getElementById('filterExcludeFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterFTTH').checked = false;
+  on('filterExcludeCATEC', 'change', e => {
+    if (e.target.checked && filterCatec) {
+      filterCatec.checked = false;
+    }
     applyFilters();
   });
-  document.getElementById('filterNodoEstado').addEventListener('change', applyFilters);
-  document.getElementById('filterCMTS').addEventListener('change', applyFilters);
-  document.getElementById('daysWindow').addEventListener('change', applyFilters);
-  document.getElementById('filterTerritorio').addEventListener('change', applyFilters);
-  document.getElementById('filterSistema').addEventListener('change', applyFilters);
-  document.getElementById('filterAlarma').addEventListener('change', applyFilters);
-  document.getElementById('quickSearch').addEventListener('input', debounce(applyFilters, 300));
-  document.getElementById('ordenarPorIngreso').addEventListener('change', applyFilters);
 
-  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
-  if (zoneFilterSearch) {
-    zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
-  }
+  on('showAllStates', 'change', applyFilters);
 
-  const zoneFilterOptions = document.getElementById('zoneFilterOptions');
-  if (zoneFilterOptions) {
-    zoneFilterOptions.addEventListener('change', onZoneOptionChange);
+  const filterFTTH = document.getElementById('filterFTTH');
+  const filterExcludeFTTH = document.getElementById('filterExcludeFTTH');
+  on('filterFTTH', 'change', e => {
+    if (e.target.checked && filterExcludeFTTH) {
+      filterExcludeFTTH.checked = false;
+    }
+    applyFilters();
+  });
+  on('filterExcludeFTTH', 'change', e => {
+    if (e.target.checked && filterFTTH) {
+      filterFTTH.checked = false;
+    }
+    applyFilters();
+  });
+  on('filterNodoEstado', 'change', applyFilters);
+  on('filterCMTS', 'change', applyFilters);
+  on('daysWindow', 'change', applyFilters);
+  on('filterTerritorio', 'change', applyFilters);
+  on('filterSistema', 'change', applyFilters);
+  on('filterAlarma', 'change', applyFilters);
+  on('quickSearch', 'input', debounce(applyFilters, 300));
+  on('ordenarPorIngreso', 'change', applyFilters);
+
+  on('zoneFilterSearch', 'input', onZoneFilterSearch);
+  on('zoneFilterOptions', 'change', onZoneOptionChange);
+
+  const edificiosPanel = document.getElementById('edificiosPanel');
+  if (edificiosPanel && !edificiosPanelListenerBound) {
+    edificiosPanel.addEventListener('click', handleEdificiosPanelClick, false);
+    edificiosPanelListenerBound = true;
   }
 
   document.addEventListener('click', handleZoneFilterOutsideClick);
@@ -3132,9 +3738,14 @@ async function loadFile(e, tipo) {
 function processData() {
   const merged = dataProcessor.merge();
   if (!merged.length) return;
-  
+
+  merged.forEach(order => {
+    enrichRowWithDeviceInfo(order);
+    ensureOrderDeviceMeta(order);
+  });
+
   const daysWindow = parseInt(document.getElementById('daysWindow').value);
-  
+
   const zones = dataProcessor.processZones(merged);
   allZones = dataProcessor.analyzeZones(zones, daysWindow);
   allCMTS = dataProcessor.analyzeCMTS(allZones);
@@ -3254,8 +3865,23 @@ function applyFilters() {
   
   document.getElementById('zonasPanel').innerHTML = UIRenderer.renderZonas(analyzed);
   document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
-  document.getElementById('edificiosPanel').innerHTML = UIRenderer.renderEdificios(filtered);
+
+  const edificiosPanelEl = document.getElementById('edificiosPanel');
+  if (edificiosPanelEl) {
+    edificiosPanelEl.innerHTML = UIRenderer.renderEdificios(filtered);
+    const botonesVer = edificiosPanelEl.querySelectorAll('.btn-ver-edificio');
+    console.log('🔍 Botones "Ver" en edificios:', botonesVer.length); // verificación rápida del renderizado
+  }
+
+  const fmsPanelEl = document.getElementById('fmsPanel');
+  if (fmsPanelEl) {
+    const fmsMap = dataProcessor?.fmsMap instanceof Map ? dataProcessor.fmsMap : new Map();
+    console.assert(fmsMap instanceof Map && fmsMap.size > 0, 'fmsMap vacío');
+    fmsPanelEl.innerHTML = FMSPanel.render(filtered, fmsMap);
+  }
+
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
+  persistFilters();
 }
 
 function resetFiltersState() {
@@ -3433,10 +4059,21 @@ function filtrarPorTerritorio(territorioNormalizado) {
 
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
-  
-  document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-  document.getElementById(`${tabName}Panel`).classList.add('active');
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.remove('active');
+    panel.style.display = 'none';
+  });
+
+  const targetBtn = document.querySelector(`[data-tab="${tabName}"]`);
+  if (targetBtn) {
+    targetBtn.classList.add('active');
+  }
+
+  const targetPanel = document.getElementById(`${tabName}Panel`);
+  if (targetPanel) {
+    targetPanel.classList.add('active');
+    targetPanel.style.display = '';
+  }
 }
 
 function showAlarmaInfo(zoneIdx) {
@@ -3474,22 +4111,63 @@ function closeAlarmaModal() {
   document.body.classList.remove('modal-open');
 }
 
-function showEdificioDetail(idx) {
-  const edificio = window.edificiosData[idx];
-  if (!edificio) return;
-  
+function handleEdificiosPanelClick(event) {
+  const trigger = event.target.closest('.btn-ver-edificio');
+  if (!trigger) return;
+  event.preventDefault();
+
+  const indexAttr = trigger.getAttribute('data-index');
+  const direccionAttr = trigger.getAttribute('data-direccion');
+  if (indexAttr == null && !direccionAttr) {
+    console.warn('No se pudo determinar el identificador del edificio', trigger);
+    toast('❌ No se pudo abrir el edificio seleccionado');
+    return;
+  }
+
+  showEdificioModal(indexAttr ?? direccionAttr);
+}
+
+function showEdificioModal(identifier) {
+  const data = Array.isArray(window.edificiosData) ? window.edificiosData : [];
+  if (!data.length) {
+    console.warn('No hay datos de edificios disponibles para abrir el detalle');
+    toast('❌ No hay información de edificios disponible');
+    return;
+  }
+
+  let edificio = null;
+  if (identifier !== undefined && identifier !== null) {
+    const idx = Number(identifier);
+    if (!Number.isNaN(idx) && data[idx]) {
+      edificio = data[idx];
+    }
+  }
+
+  if (!edificio && typeof identifier === 'string') {
+    const normalizedTarget = TextUtils.normalize(identifier);
+    edificio = data.find(item => TextUtils.normalize(item.direccion) === normalizedTarget) || null;
+  }
+
+  if (!edificio) {
+    console.warn('No se encontró información del edificio solicitado', identifier);
+    toast('❌ No se encontraron datos del edificio seleccionado');
+    return;
+  }
+
+  console.log(`open edificio ${identifier}`); // traceo de apertura solicitado
+
   document.getElementById('edificioModalTitle').textContent = `🏢 Edificio: ${edificio.direccion}`;
-  
+
   let html = `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
     <strong>Zona:</strong> ${edificio.zona}<br>
     <strong>Territorio:</strong> ${edificio.territorio}<br>
     <strong>Total OTs:</strong> ${edificio.casos.length}
   </div>`;
-  
+
   html += '<div class="table-container"><div class="table-wrapper"><table class="detail-table"><thead><tr>';
   html += '<th>Número de Caso</th><th>Estado</th><th>Diagnóstico</th><th>Fecha Creación</th>';
   html += '</tr></thead><tbody>';
-  
+
   edificio.casos.forEach(o => {
     const numCaso = o['Número del caso'] || o['Caso Externo'] || '';
     const sistema = TextUtils.detectarSistema(numCaso);
@@ -3499,11 +4177,11 @@ function showEdificioDetail(idx) {
     } else if (sistema === 'FAN') {
       badgeSistema = '<span class="badge badge-fan">FAN</span>';
     }
-    
+
     const estado = o['Estado'] || o['Estado.1'] || o['Estado.2'] || '';
     const diag = o['Diagnostico Tecnico'] || o['Diagnóstico Técnico'] || '-';
     const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || '';
-    
+
     html += `<tr>
       <td>${numCaso} ${badgeSistema}</td>
       <td>${estado}</td>
@@ -3511,12 +4189,16 @@ function showEdificioDetail(idx) {
       <td>${fecha}</td>
     </tr>`;
   });
-  
+
   html += '</tbody></table></div></div>';
-  
+
   document.getElementById('edificioModalBody').innerHTML = html;
   document.getElementById('edificioBackdrop').classList.add('show');
   document.body.classList.add('modal-open');
+}
+
+function showEdificioDetail(idx) {
+  showEdificioModal(idx);
 }
 
 function closeEdificioModal() {
@@ -3660,6 +4342,15 @@ function renderModalContent() {
       return dt && DateUtils.format(dt) === dia;
     });
   }
+
+  let resumenDispositivo = null;
+  for (const orden of ordenes) {
+    const device = ensureOrderDeviceMeta(orden);
+    if (device && (device.brand || device.technology || device.model || device.mac || device.type)) {
+      resumenDispositivo = device;
+      break;
+    }
+  }
   
   const chartCounts = UIRenderer.normalizeCounts(currentZone.last7DaysCounts);
   const chartLabels = Array.isArray(currentZone.last7Days) ? currentZone.last7Days : [];
@@ -3703,6 +4394,13 @@ function renderModalContent() {
   });
   
   const columns = Array.from(allCols);
+  const extraDeviceColumns = ['MAC', 'Modelo', 'Tipo'];
+  extraDeviceColumns.forEach(col => {
+    if (!columns.includes(col)) {
+      columns.push(col);
+    }
+  });
+
   columns.forEach(col => {
     html += `<th style="position: sticky; top: 0; z-index: 10; white-space: nowrap;">${col}</th>`;
   });
@@ -3712,12 +4410,34 @@ function renderModalContent() {
   ordenes.forEach((o, idx) => {
     const cita = o['Número de cita'] || `row_${idx}`;
     const checked = selectedOrders.has(cita) ? 'checked' : '';
+    const device = ensureOrderDeviceMeta(o) || {};
+    const rawMac = pickFirstValue(o, ORDER_FIELD_KEYS.mac);
+    let fallbackMac = rawMac;
+    const dispositivoPrincipal = Array.isArray(o.__meta?.dispositivos) && o.__meta.dispositivos.length
+      ? o.__meta.dispositivos[0]
+      : null;
+    if (!fallbackMac && dispositivoPrincipal) {
+      fallbackMac = dispositivoPrincipal.macAddress || dispositivoPrincipal.mac || '';
+    }
+    fallbackMac = TextUtils.formatMac(fallbackMac) || '';
+    const fallbackTipo = pickFirstValue(o, ORDER_FIELD_KEYS.tipo);
+    const deviceData = {
+      MAC: device.mac || fallbackMac,
+      Modelo: device.model || '',
+      Tipo: device.type || device.technology || fallbackTipo || ''
+    };
     html += `<tr>`;
     html += `<td><input type="checkbox" class="order-checkbox" data-cita="${cita}" ${checked} onchange="updateSelection()"></td>`;
-    
+
     columns.forEach(col => {
-      let value = o[col] || '';
-      
+      let value;
+
+      if (extraDeviceColumns.includes(col)) {
+        value = deviceData[col] || '';
+      } else {
+        value = o[col] || '';
+      }
+
       if (col.includes('Número del caso') || col.includes('Caso')) {
         const sistema = TextUtils.detectarSistema(value);
         if (sistema) {
@@ -3743,8 +4463,7 @@ function renderModalContent() {
 }
 
 function toggleSelectAll() {
-  const checked = document.getElementById('selectAllOrders')?.checked || 
-                 document.getElementById('selectAllCheckbox')?.checked || false;
+  const checked = document.getElementById('selectAllCheckbox')?.checked || false;
   
   document.querySelectorAll('.order-checkbox').forEach(cb => {
     cb.checked = checked;
