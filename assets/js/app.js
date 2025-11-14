@@ -1180,7 +1180,9 @@ const zoneFilterState = {
   filteredOptions: [],
   selected: new Set(),
   search: '',
-  open: false
+  open: false,
+  lastOptionsSignature: '',
+  lastFilteredSignature: ''
 };
 
 const Filters = {
@@ -1360,36 +1362,48 @@ const Filters = {
   }
 };
 
+const zoneDamageSummaryCache = new WeakMap();
+
 function extractDamageSummaryFromZone(zone) {
   if (!zone || typeof zone !== 'object') return [];
+
+  if (zoneDamageSummaryCache.has(zone)) {
+    return zoneDamageSummaryCache.get(zone).map(item => ({ ...item }));
+  }
+
+  let summary = [];
+
   if (Array.isArray(zone.damageSummary) && zone.damageSummary.length) {
-    return zone.damageSummary.map(item => ({
+    summary = zone.damageSummary.map(item => ({
       diagnostico: item.diagnostico,
       count: item.count
     }));
+  } else {
+    const counts = new Map();
+    const ordenes = Array.isArray(zone.ordenesOriginales)
+      ? zone.ordenesOriginales
+      : Array.isArray(zone.ordenes)
+        ? zone.ordenes
+        : [];
+
+    ordenes.forEach(o => {
+      const diag = o['Diagnostico Tecnico'] ||
+                   o['Diagnóstico Técnico'] ||
+                   o['Diagnostico tecnico'] ||
+                   o['Diagnostico'] ||
+                   'Sin diagnóstico';
+      const key = (diag && String(diag).trim()) || 'Sin diagnóstico';
+      if (!counts.has(key)) {
+        counts.set(key, { diagnostico: key, count: 0 });
+      }
+      counts.get(key).count += 1;
+    });
+
+    summary = Array.from(counts.values()).sort((a, b) => b.count - a.count);
   }
 
-  const counts = new Map();
-  const ordenes = Array.isArray(zone.ordenesOriginales)
-    ? zone.ordenesOriginales
-    : Array.isArray(zone.ordenes)
-      ? zone.ordenes
-      : [];
-
-  ordenes.forEach(o => {
-    const diag = o['Diagnostico Tecnico'] ||
-                 o['Diagnóstico Técnico'] ||
-                 o['Diagnostico tecnico'] ||
-                 o['Diagnostico'] ||
-                 'Sin diagnóstico';
-    const key = (diag && String(diag).trim()) || 'Sin diagnóstico';
-    if (!counts.has(key)) {
-      counts.set(key, { diagnostico: key, count: 0 });
-    }
-    counts.get(key).count += 1;
-  });
-
-  return Array.from(counts.values()).sort((a, b) => b.count - a.count);
+  zoneDamageSummaryCache.set(zone, summary);
+  return summary.map(item => ({ ...item }));
 }
 
 function buildZoneFilterOptions(zones = []) {
@@ -1437,6 +1451,52 @@ function buildZoneFilterOptions(zones = []) {
   return options;
 }
 
+function createZoneOptionsSignature(options = []) {
+  const list = Array.isArray(options) ? options : [];
+
+  return list.map(option => {
+    const diagnostics = (option.damageSummary || [])
+      .slice(0, 3)
+      .map(d => `${d.diagnostico}:${d.count}`)
+      .join('|');
+
+    return [
+      option.name || '',
+      Number.isFinite(option.totalOTs) ? option.totalOTs : 0,
+      option.tipo || '',
+      option.criticidad || '',
+      option.tieneAlarma ? '1' : '0',
+      diagnostics
+    ].join('~');
+  }).join('||');
+}
+
+function setZoneFilterOptions(options, { force = false } = {}) {
+  const signature = createZoneOptionsSignature(options);
+  const changed = force || signature !== zoneFilterState.lastOptionsSignature;
+
+  zoneFilterState.allOptions = options;
+
+  if (changed) {
+    zoneFilterState.lastOptionsSignature = signature;
+  }
+
+  return changed;
+}
+
+function setZoneFilterFilteredOptions(options, { force = false } = {}) {
+  const signature = createZoneOptionsSignature(options);
+
+  if (!force && signature === zoneFilterState.lastFilteredSignature) {
+    zoneFilterState.filteredOptions = options;
+    return false;
+  }
+
+  zoneFilterState.filteredOptions = options;
+  zoneFilterState.lastFilteredSignature = signature;
+  return true;
+}
+
 function filterZoneOptionsBySearch(options, term) {
   const normalized = TextUtils.normalize(term || '');
   if (!normalized) return options.slice();
@@ -1448,40 +1508,56 @@ function filterZoneOptionsBySearch(options, term) {
 }
 
 function initializeZoneFilterOptions(zones, options = {}) {
-  const { resetSelection = true, resetSearch = resetSelection } = options;
+  const {
+    resetSelection = true,
+    resetSearch = resetSelection,
+    forceRender = false
+  } = options;
 
   const previousSelection = new Set(zoneFilterState.selected);
   const builtOptions = buildZoneFilterOptions(zones);
-
-  zoneFilterState.allOptions = builtOptions;
+  const optionsChanged = setZoneFilterOptions(builtOptions, { force: forceRender });
 
   let selectionChanged = false;
+
   if (resetSelection) {
     selectionChanged = previousSelection.size > 0;
     zoneFilterState.selected = new Set();
-  } else {
+  } else if (optionsChanged) {
+    const validNames = new Set(builtOptions.map(opt => opt.name));
     const nextSelection = new Set();
+
     previousSelection.forEach(zoneName => {
-      if (builtOptions.some(opt => opt.name === zoneName)) {
+      if (validNames.has(zoneName)) {
         nextSelection.add(zoneName);
       }
     });
+
     selectionChanged = nextSelection.size !== previousSelection.size;
     zoneFilterState.selected = nextSelection;
   }
 
   if (resetSearch) {
+    if (zoneFilterState.search) {
+      const searchInput = document.getElementById('zoneFilterSearch');
+      if (searchInput) searchInput.value = '';
+    }
     zoneFilterState.search = '';
-    const searchInput = document.getElementById('zoneFilterSearch');
-    if (searchInput) searchInput.value = '';
   }
 
-  zoneFilterState.filteredOptions = filterZoneOptionsBySearch(
+  const filteredList = filterZoneOptionsBySearch(
     zoneFilterState.allOptions,
     zoneFilterState.search
   );
 
-  renderZoneFilterOptions();
+  const filteredChanged = setZoneFilterFilteredOptions(filteredList, {
+    force: forceRender || optionsChanged || resetSearch
+  });
+
+  if (optionsChanged || filteredChanged || forceRender) {
+    renderZoneFilterOptions();
+  }
+
   updateZoneFilterSummary();
   Filters.selectedZonas = Array.from(zoneFilterState.selected);
 
@@ -1609,13 +1685,18 @@ function handleZoneFilterOutsideClick(event) {
   }
 }
 
-function onZoneFilterSearch(event) {
-  const value = event.target.value || '';
-  zoneFilterState.search = value;
+const updateZoneFilterSearch = debounce(value => {
+  const nextValue = value || '';
+  if (nextValue === zoneFilterState.search) return;
 
-  zoneFilterState.filteredOptions = filterZoneOptionsBySearch(zoneFilterState.allOptions, value);
-
+  zoneFilterState.search = nextValue;
+  const filtered = filterZoneOptionsBySearch(zoneFilterState.allOptions, nextValue);
+  setZoneFilterFilteredOptions(filtered, { force: true });
   renderZoneFilterOptions();
+}, 150);
+
+function onZoneFilterSearch(event) {
+  updateZoneFilterSearch(event.target.value || '');
 }
 
 function onZoneOptionChange(event) {
@@ -1663,14 +1744,15 @@ function resetZoneFilterState(options = {}) {
 
   if (!keepSearch) {
     zoneFilterState.search = '';
-    zoneFilterState.filteredOptions = zoneFilterState.allOptions.slice();
+    setZoneFilterFilteredOptions(zoneFilterState.allOptions.slice(), { force: true });
     const searchInput = document.getElementById('zoneFilterSearch');
     if (searchInput) searchInput.value = '';
   } else {
-    zoneFilterState.filteredOptions = filterZoneOptionsBySearch(
+    const filtered = filterZoneOptionsBySearch(
       zoneFilterState.allOptions,
       zoneFilterState.search
     );
+    setZoneFilterFilteredOptions(filtered, { force: true });
   }
 
   renderZoneFilterOptions();
@@ -3200,41 +3282,104 @@ function populateFilters() {
   });
 }
 
+function collectFiltersFromUI() {
+  const getCheckbox = id => {
+    const el = document.getElementById(id);
+    return el ? Boolean(el.checked) : false;
+  };
+
+  const getValue = id => {
+    const el = document.getElementById(id);
+    if (!el) return '';
+    return el.value ?? '';
+  };
+
+  Filters.catec = getCheckbox('filterCATEC');
+  Filters.excludeCatec = !Filters.catec && getCheckbox('filterExcludeCATEC');
+  if (Filters.catec) {
+    const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+    if (excludeCatecEl && excludeCatecEl.checked) excludeCatecEl.checked = false;
+  } else if (Filters.excludeCatec) {
+    const catecEl = document.getElementById('filterCATEC');
+    if (catecEl && catecEl.checked) catecEl.checked = false;
+  }
+  Filters.showAllStates = getCheckbox('showAllStates');
+  Filters.ftth = getCheckbox('filterFTTH');
+  Filters.excludeFTTH = !Filters.ftth && getCheckbox('filterExcludeFTTH');
+  if (Filters.ftth) {
+    const excludeFtthEl = document.getElementById('filterExcludeFTTH');
+    if (excludeFtthEl && excludeFtthEl.checked) excludeFtthEl.checked = false;
+  } else if (Filters.excludeFTTH) {
+    const ftthEl = document.getElementById('filterFTTH');
+    if (ftthEl && ftthEl.checked) ftthEl.checked = false;
+  }
+  Filters.nodoEstado = getValue('filterNodoEstado');
+  Filters.cmts = getValue('filterCMTS');
+  Filters.territorio = getValue('filterTerritorio');
+  Filters.sistema = getValue('filterSistema');
+  Filters.alarma = getValue('filterAlarma');
+  Filters.quickSearch = (getValue('quickSearch') || '').trim();
+  Filters.ordenarPorIngreso = getValue('ordenarPorIngreso') || 'desc';
+
+  const daysInput = document.getElementById('daysWindow');
+  const parsedDays = parseInt(daysInput?.value, 10);
+  if (Number.isFinite(parsedDays) && parsedDays > 0) {
+    Filters.days = parsedDays;
+  } else {
+    Filters.days = CONFIG.defaultDays;
+    if (daysInput) daysInput.value = CONFIG.defaultDays;
+  }
+
+  Filters.selectedZonas = Array.from(zoneFilterState.selected);
+}
+
+function runFiltersPipeline() {
+  const sourceOrders = Array.isArray(currentData?.ordenes) ? currentData.ordenes : [];
+  const filtered = Filters.apply(sourceOrders);
+
+  const zones = dataProcessor.processZones(filtered);
+  let analyzed = dataProcessor.analyzeZones(zones, Filters.days);
+  analyzed = Filters.applyToZones(analyzed);
+
+  const cmtsFiltered = dataProcessor.analyzeCMTS(analyzed);
+  const territoriosAnalisis = dataProcessor.analyzeTerritorios(analyzed);
+
+  return { filtered, analyzed, cmtsFiltered, territoriosAnalisis };
+}
+
 function applyFilters() {
   if (!currentData) return;
 
-  const previousSelectedZones = Array.from(zoneFilterState.selected);
+  collectFiltersFromUI();
 
-  const catecEl = document.getElementById('filterCATEC');
-  const excludeCatecEl = document.getElementById('filterExcludeCATEC');
+  let pipelineResult = null;
+  let trimmed = false;
+  let attempts = 0;
 
-  Filters.catec = catecEl ? catecEl.checked : false;
-  Filters.excludeCatec = excludeCatecEl ? excludeCatecEl.checked : false;
-  Filters.showAllStates = document.getElementById('showAllStates').checked;
-  Filters.ftth = document.getElementById('filterFTTH').checked;
-  Filters.excludeFTTH = document.getElementById('filterExcludeFTTH').checked;
-  Filters.nodoEstado = document.getElementById('filterNodoEstado').value;
-  Filters.cmts = document.getElementById('filterCMTS').value;
-  Filters.days = parseInt(document.getElementById('daysWindow').value);
-  Filters.territorio = document.getElementById('filterTerritorio').value;
-  Filters.sistema = document.getElementById('filterSistema').value;
-  Filters.alarma = document.getElementById('filterAlarma').value;
-  Filters.quickSearch = document.getElementById('quickSearch').value;
-  Filters.ordenarPorIngreso = document.getElementById('ordenarPorIngreso').value;
+  do {
+    Filters.selectedZonas = Array.from(zoneFilterState.selected);
+    pipelineResult = runFiltersPipeline();
+
+    trimmed = initializeZoneFilterOptions(pipelineResult.analyzed, {
+      resetSelection: false,
+      resetSearch: false,
+      forceRender: attempts === 0
+    });
+
+    attempts += 1;
+  } while (trimmed && attempts < 5);
+
+  if (trimmed) {
+    console.warn('Zone filter selection required repeated trimming; latest results may exclude inconsistent zonas.');
+  }
+
+  if (!pipelineResult) return;
+
   Filters.selectedZonas = Array.from(zoneFilterState.selected);
 
-  const filtered = Filters.apply(currentData.ordenes);
-  
-  const zones = dataProcessor.processZones(filtered);
-  let analyzed = dataProcessor.analyzeZones(zones, Filters.days);
-  
-  analyzed = Filters.applyToZones(analyzed);
-  
-  const cmtsFiltered = dataProcessor.analyzeCMTS(analyzed);
-  
-  const territoriosAnalisis = dataProcessor.analyzeTerritorios(analyzed);
+  const { filtered, analyzed, cmtsFiltered, territoriosAnalisis } = pipelineResult;
   window.territoriosData = territoriosAnalisis;
-  
+
   const stats = {
     total: analyzed.reduce((sum, z) => sum + z.totalOTs, 0),
     zonas: analyzed.length,
@@ -3244,26 +3389,16 @@ function applyFilters() {
     nodosCriticos: analyzed.filter(z => z.nodoEstado === 'critical').length
   };
   document.getElementById('statsGrid').innerHTML = UIRenderer.renderStats(stats);
-  
+
   window.lastFilteredOrders = filtered;
   window.currentAnalyzedZones = analyzed;
   window.currentCMTSData = cmtsFiltered;
   allZones = analyzed;
   allCMTS = cmtsFiltered;
 
-  const selectionTrimmed = initializeZoneFilterOptions(analyzed, {
-    resetSelection: false,
-    resetSearch: false
-  });
-
-  if (selectionTrimmed && previousSelectedZones.length && zoneFilterState.selected.size < previousSelectedZones.length) {
-    applyFilters();
-    return;
-  }
-
   document.getElementById('btnExportExcel').disabled = analyzed.length === 0 && filtered.length === 0;
   document.getElementById('btnExportExcelZonas').disabled = analyzed.length === 0;
-  
+
   document.getElementById('zonasPanel').innerHTML = UIRenderer.renderZonas(analyzed);
   document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
   document.getElementById('edificiosPanel').innerHTML = UIRenderer.renderEdificios(filtered);
@@ -4027,14 +4162,6 @@ function exportModalDetalleExcel(){
   const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `Detalle_${fecha}.xlsx`);
   toast('✓ Detalle exportado');
-}
-
-function debounce(func, wait) {
-  let timeout;
-  return function (...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
-  };
 }
 
 console.log('✅ Panel v5.0 COMPLETO inicializado');
