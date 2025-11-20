@@ -1,433 +1,381 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<HTML>
-
-<HEAD>
-	<?php
-
-	include "../recursos/recursos.php";
-	include "../recursos/encabezado.php";
-	session_start();
-	$herramienta = 'panel_fulfillment';
-	validar_sesion($herramienta);
-	headerBasico();
-	headerBootstrap(1);
-	headerDatatables();
-	// headerHightcharts(1);
-	$aleatorio = rand(1, 100000);
-	log_visitas_a_web($con_w);
-	echo "<script type='text/javascript' src='funciones.js?$aleatorio'></script>";
-	echo "<script type='text/javascript' src='../recursos/js.js?$aleatorio'></script>";
-	echo "<link rel='stylesheet' type='text/css' href='style.css?$aleatorio'>";
-	
-	// SCRIPTS PANEL FULFILLMENT
-	echo "<script src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'></script>";
-	echo "<link rel='stylesheet' href='assets/css/styles.css?$aleatorio'>";
-
-	?>
-	<TITLE>Panel Fulfillment v5.0</TITLE>
-</HEAD>
-
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel Fulfillment v5.0</title>
+  
+  <!-- XLSX Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  
+  <!-- Estilos del Panel -->
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
 <body>
-
-	<div class="card border-0">
-		<div class="card-heading">
-			<nav class="navbar navbar-expand-lg bg-dark navbar-dark " >
-				<h4 class="navbar-brand m-0" href="#">📊 Panel Fulfillment v5.0</h4>
-				
-				<div class="collapse navbar-collapse" id="navbarSupportedContent">
-					<ul class="navbar-nav mr-auto">
-					</ul>
-
-					<ul class="navbar-nav">
-						<li class="nav-item">
-							<span class="navbar-text">
-								<span class="fa fa-user-circle" aria-hidden="true"></span>
-								<?php echo utf8_encode("Bienvenido: " . $_SESSION['user']); ?>
-							</span>
-						</li>
-						<li class="nav-item">
-							<a href="../recursos/sesion/desconectar.php?pag=panel_fulfillment" class="nav-link"><span class="fa fa-sign-out" aria-hidden="true"></span>CERRAR SESION</a>
-						</li>
-					</ul>
-				</div>
-			</nav>
-		</div>
-		
-		<div>
-			<!-- ========== PANEL FULFILLMENT CONTENT ========== -->
-			<div class="app-container">
+  <div class="app-container">
     
-				<header class="app-header">
-					<div class="header-content">
-						<div class="header-title">
-							<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-								<polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-								<line x1="12" y1="22.08" x2="12" y2="12"></line>
-							</svg>
-							<div>
-								<h1>📊 Panel Fulfillment <span class="version-badge">v5.0 COMPLETO</span></h1>
-								<p>✨ Filtro selectivo de zonas • Sparklines normalizadas • Históricos consistentes • Alarmas FMS • Equipos • Filtro anti-CATEC</p>
-							</div>
-						</div>
-						<div class="header-actions">
-							<div class="utilities-dropdown">
-								<button class="btn-utilities" onclick="toggleUtilities()">
-									🔧 Utilidades
-								</button>
-								<div class="utilities-menu" id="utilitiesMenu">
-									<div class="utilities-menu-group">
-										<div class="utilities-menu-header">Recursos rápidos</div>
-										<div class="utilities-menu-item" onclick="openPlanillasNewTab()">
-											📋 Planillas
-										</div>
-										<div class="utilities-menu-item" onclick="openUsefulLinks()">
-											🔗 Links útiles
-										</div>
-									</div>
-								</div>
-							</div>
-							<button class="btn-help" onclick="toast('💡 v5.0 Completo: Filtro selectivo de zonas estilo Excel + Links útiles renovados, sparklines normalizadas y filtro anti-CATEC (últimas 24h)')">
-								💡 Info
-							</button>
-						</div>
-					</div>
-				</header>
+    <header class="app-header">
+      <div class="header-content">
+        <div class="header-title">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+          </svg>
+          <div>
+            <h1>📊 Panel Fulfillment <span class="version-badge">v5.0 COMPLETO</span></h1>
+            <p>✨ Filtro selectivo de zonas • Sparklines normalizadas • Históricos consistentes • Alarmas FMS • Equipos • Filtro anti-CATEC</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <div class="utilities-dropdown">
+            <button class="btn-utilities" onclick="toggleUtilities()">
+              🔧 Utilidades
+            </button>
+            <div class="utilities-menu" id="utilitiesMenu">
+              <div class="utilities-menu-group">
+                <div class="utilities-menu-header">Recursos rápidos</div>
+                <div class="utilities-menu-item" onclick="openPlanillasNewTab()">
+                  📋 Planillas
+                </div>
+                <div class="utilities-menu-item" onclick="openUsefulLinks()">
+                  🔗 Links útiles
+                </div>
+              </div>
+            </div>
+          </div>
+          <button class="btn-help" onclick="toast('💡 v5.0 Completo: Filtro selectivo de zonas estilo Excel + Links útiles renovados, sparklines normalizadas y filtro anti-CATEC (últimas 24h)')">
+            💡 Info
+          </button>
+        </div>
+      </div>
+    </header>
 
-				<section class="load-panel">
-					<div class="load-section">
-						<div class="section-header">📁 CARGAR REPORTES</div>
-						
-						<div class="load-buttons">
-							<div class="load-item">
-								<label for="fileConsolidado1" class="btn btn-primary">📄 Consolidado 1</label>
-								<input type="file" id="fileConsolidado1" accept=".xlsx,.xls,.csv" hidden>
-								<span class="file-status" id="status1">Sin cargar</span>
-							</div>
-							
-							<div class="load-item">
-								<label for="fileConsolidado2" class="btn btn-primary">📄 Consolidado 2</label>
-								<input type="file" id="fileConsolidado2" accept=".xlsx,.xls,.csv" hidden>
-								<span class="file-status" id="status2">Sin cargar</span>
-							</div>
-							
-							<div class="load-item">
-								<label for="fileNodos" class="btn btn-primary">🌐 Nodos UP/DOWN</label>
-								<input type="file" id="fileNodos" accept=".xlsx,.xls,.csv" hidden>
-								<span class="file-status" id="status3">Sin cargar</span>
-							</div>
-							
-							<div class="load-item">
-								<label for="fileFMS" class="btn btn-primary">🚨 Alarmas FMS</label>
-								<input type="file" id="fileFMS" accept=".xlsx,.xls,.csv" hidden>
-								<span class="file-status" id="status4">Sin cargar</span>
-							</div>
-							
-							<div class="merge-status" id="mergeStatus" style="display: none;">
-								✓ <span id="mergeStatusText">Procesando...</span>
-							</div>
-						</div>
-					</div>
-				</section>
+    <section class="load-panel">
+      <div class="load-section">
+        <div class="section-header">📁 CARGAR REPORTES</div>
+        
+        <div class="load-buttons">
+          <div class="load-item">
+            <label for="fileConsolidado1" class="btn btn-primary">📄 Consolidado 1</label>
+            <input type="file" id="fileConsolidado1" accept=".xlsx,.xls,.csv" hidden>
+            <span class="file-status" id="status1">Sin cargar</span>
+          </div>
+          
+          <div class="load-item">
+            <label for="fileConsolidado2" class="btn btn-primary">📄 Consolidado 2</label>
+            <input type="file" id="fileConsolidado2" accept=".xlsx,.xls,.csv" hidden>
+            <span class="file-status" id="status2">Sin cargar</span>
+          </div>
+          
+          <div class="load-item">
+            <label for="fileNodos" class="btn btn-primary">🌐 Nodos UP/DOWN</label>
+            <input type="file" id="fileNodos" accept=".xlsx,.xls,.csv" hidden>
+            <span class="file-status" id="status3">Sin cargar</span>
+          </div>
+          
+          <div class="load-item">
+            <label for="fileFMS" class="btn btn-primary">🚨 Alarmas FMS</label>
+            <input type="file" id="fileFMS" accept=".xlsx,.xls,.csv" hidden>
+            <span class="file-status" id="status4">Sin cargar</span>
+          </div>
+          
+          <div class="merge-status" id="mergeStatus" style="display: none;">
+            ✓ <span id="mergeStatusText">Procesando...</span>
+          </div>
+        </div>
+      </div>
+    </section>
 
-				<nav class="filters-panel">
-					<div class="filter-group">
-						<div class="filter-label">🔥 Ordenar Zonas</div>
-						<select id="ordenarPorIngreso" class="input-select">
-							<option value="desc">Mayor a Menor Ingreso</option>
-							<option value="asc">Menor a Mayor Ingreso</option>
-							<option value="">Sin ordenar (Score)</option>
-						</select>
-					</div>
+    <nav class="filters-panel">
+      <div class="filter-group">
+        <div class="filter-label">🔥 Ordenar Zonas</div>
+        <select id="ordenarPorIngreso" class="input-select">
+          <option value="desc">Mayor a Menor Ingreso</option>
+          <option value="asc">Menor a Mayor Ingreso</option>
+          <option value="">Sin ordenar (Score)</option>
+        </select>
+      </div>
 
-					<div class="filter-group">
-						<div class="filter-label">Filtros Base</div>
-						<label class="checkbox-label">
-							<input type="checkbox" id="filterCATEC">
-							<span>Solo CATEC</span>
-						</label>
-						<label class="toggle-control">
-							<input type="checkbox" id="filterExcludeCATEC">
-							<span class="toggle-track">
-								<span class="toggle-thumb"></span>
-							</span>
-							<span class="toggle-text">Excluir CATEC</span>
-						</label>
-						<label class="checkbox-label">
-							<input type="checkbox" id="showAllStates">
-							<span>Ver todos los estados</span>
-						</label>
-					</div>
+      <div class="filter-group">
+        <div class="filter-label">Filtros Base</div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="filterCATEC">
+          <span>Solo CATEC</span>
+        </label>
+        <label class="toggle-control">
+          <input type="checkbox" id="filterExcludeCATEC">
+          <span class="toggle-track">
+            <span class="toggle-thumb"></span>
+          </span>
+          <span class="toggle-text">Excluir CATEC</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="showAllStates">
+          <span>Ver todos los estados</span>
+        </label>
+      </div>
 
-					<div class="filter-group">
-						<div class="filter-label">Tecnología</div>
-						<label class="checkbox-label">
-							<input type="checkbox" id="filterFTTH">
-							<span>Solo FTTH (9xx)</span>
-						</label>
-						<label class="checkbox-label">
-							<input type="checkbox" id="filterExcludeFTTH">
-							<span>Excluir FTTH</span>
-						</label>
-					</div>
-					
-					<div class="filter-group">
-						<div class="filter-label">Estado Nodo</div>
-						<select id="filterNodoEstado" class="input-select">
-							<option value="">Todos</option>
-							<option value="up">Solo UP</option>
-							<option value="down">Solo DOWN</option>
-							<option value="critical">Críticos (>50 DOWN)</option>
-						</select>
-					</div>
-					
-					<div class="filter-group">
-						<div class="filter-label">CMTS</div>
-						<select id="filterCMTS" class="input-select">
-							<option value="">Todos</option>
-						</select>
-					</div>
-					
-					<div class="filter-group">
-						<div class="filter-label">⭐ Ventana Temporal</div>
-						<select id="daysWindow" class="input-select">
-							<option value="3" selected>3 días</option>
-							<option value="7">7 días</option>
-							<option value="14">14 días</option>
-							<option value="30">30 días</option>
-						</select>
-					</div>
-					
-					<div class="filter-group">
-						<div class="filter-label">Territorio</div>
-						<select id="filterTerritorio" class="input-select">
-							<option value="">Todos</option>
-						</select>
-					</div>
-					
-					<div class="filter-group">
-						<div class="filter-label">Sistema</div>
-						<select id="filterSistema" class="input-select">
-							<option value="">Todos</option>
-							<option value="OPEN">OPEN (8...)</option>
-							<option value="FAN">FAN (3...)</option>
-						</select>
-					</div>
-					
-					<div class="filter-group">
-						<div class="filter-label">Alarmas</div>
-						<select id="filterAlarma" class="input-select">
-							<option value="">Todas</option>
-							<option value="con-alarma">Con alarma</option>
-							<option value="sin-alarma">Sin alarma</option>
-						</select>
-					</div>
-					
-					<div class="filter-group filter-search">
-						<div class="filter-label">🔍 Búsqueda Múltiple</div>
-						<input type="text" id="quickSearch" class="input-field" placeholder="Ej: VLU901;CON376D;RSC397B">
-						<div class="search-help">Usa ; para múltiples zonas • Sin acentos • Selecciona zonas específicas con el filtro múltiple</div>
-					</div>
+      <div class="filter-group">
+        <div class="filter-label">Tecnología</div>
+        <label class="checkbox-label">
+          <input type="checkbox" id="filterFTTH">
+          <span>Solo FTTH (9xx)</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="filterExcludeFTTH">
+          <span>Excluir FTTH</span>
+        </label>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">Estado Nodo</div>
+        <select id="filterNodoEstado" class="input-select">
+          <option value="">Todos</option>
+          <option value="up">Solo UP</option>
+          <option value="down">Solo DOWN</option>
+          <option value="critical">Críticos (>50 DOWN)</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">CMTS</div>
+        <select id="filterCMTS" class="input-select">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">⭐ Ventana Temporal</div>
+        <select id="daysWindow" class="input-select">
+          <option value="3" selected>3 días</option>
+          <option value="7">7 días</option>
+          <option value="14">14 días</option>
+          <option value="30">30 días</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">Territorio</div>
+        <select id="filterTerritorio" class="input-select">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">Sistema</div>
+        <select id="filterSistema" class="input-select">
+          <option value="">Todos</option>
+          <option value="OPEN">OPEN (8...)</option>
+          <option value="FAN">FAN (3...)</option>
+        </select>
+      </div>
+      
+      <div class="filter-group">
+        <div class="filter-label">Alarmas</div>
+        <select id="filterAlarma" class="input-select">
+          <option value="">Todas</option>
+          <option value="con-alarma">Con alarma</option>
+          <option value="sin-alarma">Sin alarma</option>
+        </select>
+      </div>
+      
+      <div class="filter-group filter-search">
+        <div class="filter-label">🔍 Búsqueda Múltiple</div>
+        <input type="text" id="quickSearch" class="input-field" placeholder="Ej: VLU901;CON376D;RSC397B">
+        <div class="search-help">Usa ; para múltiples zonas • Sin acentos • Selecciona zonas específicas con el filtro múltiple</div>
+      </div>
 
-					<div class="filter-group filter-zonas">
-						<div class="filter-label">📍 Filtro selectivo de zonas</div>
-						<div class="zone-multiselect" id="zoneFilter">
-							<button type="button" class="zone-multiselect__trigger" id="zoneFilterTrigger" onclick="toggleZoneFilter(event)">
-								<span id="zoneFilterSummary">Sin datos (carga reportes)</span>
-								<span class="zone-multiselect__chevron">▾</span>
-							</button>
-							<div class="zone-multiselect__dropdown" id="zoneFilterDropdown">
-								<div class="zone-multiselect__search">
-									<input type="text" id="zoneFilterSearch" placeholder="Buscar zona..." autocomplete="off">
-									<div class="zone-multiselect__hint">Escribe las primeras letras para ver coincidencias y marca las zonas a mostrar</div>
-								</div>
-								<div class="zone-multiselect__options" id="zoneFilterOptions">
-									<div class="zone-multiselect__empty">Cargá los reportes para habilitar el filtro por zonas</div>
-								</div>
-								<div class="zone-multiselect__actions">
-									<button type="button" class="zone-action" onclick="selectAllZones(event)">Seleccionar todo</button>
-									<button type="button" class="zone-action" onclick="clearZoneSelection(event)">Limpiar</button>
-								</div>
-							</div>
-						</div>
-					</div>
+      <div class="filter-group filter-zonas">
+        <div class="filter-label">📍 Filtro selectivo de zonas</div>
+        <div class="zone-multiselect" id="zoneFilter">
+          <button type="button" class="zone-multiselect__trigger" id="zoneFilterTrigger" onclick="toggleZoneFilter(event)">
+            <span id="zoneFilterSummary">Sin datos (carga reportes)</span>
+            <span class="zone-multiselect__chevron">▾</span>
+          </button>
+          <div class="zone-multiselect__dropdown" id="zoneFilterDropdown">
+            <div class="zone-multiselect__search">
+              <input type="text" id="zoneFilterSearch" placeholder="Buscar zona..." autocomplete="off">
+              <div class="zone-multiselect__hint">Escribe las primeras letras para ver coincidencias y marca las zonas a mostrar</div>
+            </div>
+            <div class="zone-multiselect__options" id="zoneFilterOptions">
+              <div class="zone-multiselect__empty">Cargá los reportes para habilitar el filtro por zonas</div>
+            </div>
+            <div class="zone-multiselect__actions">
+              <button type="button" class="zone-action" onclick="selectAllZones(event)">Seleccionar todo</button>
+              <button type="button" class="zone-action" onclick="clearZoneSelection(event)">Limpiar</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
-					<div class="filter-actions">
-						<button class="btn btn-secondary" onclick="clearFilters()">
-							🔄 Limpiar
-						</button>
-					</div>
-				</nav>
+      <div class="filter-actions">
+        <button class="btn btn-secondary" onclick="clearFilters()">
+          🔄 Limpiar
+        </button>
+      </div>
+    </nav>
 
-				<main class="main-content">
-					
-					<section class="stats-grid" id="statsGrid">
-						<div class="loading-message">
-							<div class="spinner"></div>
-							<p>Carga los archivos para comenzar</p>
-						</div>
-					</section>
+    <main class="main-content">
+      
+      <section class="stats-grid" id="statsGrid">
+        <div class="loading-message">
+          <div class="spinner"></div>
+          <p>Carga los archivos para comenzar</p>
+        </div>
+      </section>
 
-					<section class="content-tabs">
-						<div class="tabs-nav">
-							<button class="tab-btn active" data-tab="zonas" onclick="switchTab('zonas')">🗺️ Zonas</button>
-							<button class="tab-btn" data-tab="cmts" onclick="switchTab('cmts')">🧭 CMTS</button>
-							<button class="tab-btn" data-tab="edificios" onclick="switchTab('edificios')">🏢 Edificios</button>
-							<button class="tab-btn" data-tab="equipos" onclick="switchTab('equipos')">🔧 Equipos</button>
-							<button class="tab-btn" data-tab="fms" onclick="switchTab('fms')">🚨 FMS</button>
-						</div>
+      <section class="content-tabs">
+        <div class="tabs-nav">
+          <button class="tab-btn active" data-tab="zonas" onclick="switchTab('zonas')">🗺️ Zonas</button>
+          <button class="tab-btn" data-tab="cmts" onclick="switchTab('cmts')">🧭 CMTS</button>
+          <button class="tab-btn" data-tab="edificios" onclick="switchTab('edificios')">🏢 Edificios</button>
+          <button class="tab-btn" data-tab="equipos" onclick="switchTab('equipos')">🔧 Equipos</button>
+          <button class="tab-btn" data-tab="fms" onclick="switchTab('fms')">🚨 FMS</button>
+        </div>
 
-						<div class="tabs-content">
-							<div id="zonasPanel" class="tab-panel active">
-								<div class="loading-message"><p>Los datos de zonas aparecerán aquí</p></div>
-							</div>
-							<div id="cmtsPanel" class="tab-panel">
-								<div class="loading-message"><p>Los datos agrupados por CMTS aparecerán aquí</p></div>
-							</div>
-							<div id="edificiosPanel" class="tab-panel">
-								<div class="loading-message"><p>Los datos de edificios aparecerán aquí</p></div>
-							</div>
-							<div id="equiposPanel" class="tab-panel">
-								<div class="loading-message"><p>Los equipos por zona aparecerán aquí</p></div>
-							</div>
-							<div id="fmsPanel" class="tab-panel">
-								<div class="loading-message"><p>Los datos FMS aparecerán aquí</p></div>
-							</div>
-						</div>
-					</section>
+        <div class="tabs-content">
+          <div id="zonasPanel" class="tab-panel active">
+            <div class="loading-message"><p>Los datos de zonas aparecerán aquí</p></div>
+          </div>
+          <div id="cmtsPanel" class="tab-panel">
+            <div class="loading-message"><p>Los datos agrupados por CMTS aparecerán aquí</p></div>
+          </div>
+          <div id="edificiosPanel" class="tab-panel">
+            <div class="loading-message"><p>Los datos de edificios aparecerán aquí</p></div>
+          </div>
+          <div id="equiposPanel" class="tab-panel">
+            <div class="loading-message"><p>Los equipos por zona aparecerán aquí</p></div>
+          </div>
+          <div id="fmsPanel" class="tab-panel">
+            <div class="loading-message"><p>Los datos FMS aparecerán aquí</p></div>
+          </div>
+        </div>
+      </section>
 
-					<div class="export-section">
-						<button class="btn btn-success" id="btnExportExcel" disabled onclick="exportExcelVista()">
-							📥 Exportar vista (Excel)
-						</button>
-						<button class="btn btn-secondary" id="btnExportExcelZonas" disabled onclick="exportExcelZonasCrudo()">
-							📥 Exportar zonas (crudo)
-						</button>
-					</div>
-				</main>
+      <div class="export-section">
+        <button class="btn btn-success" id="btnExportExcel" disabled onclick="exportExcelVista()">
+          📥 Exportar vista (Excel)
+        </button>
+        <button class="btn btn-secondary" id="btnExportExcelZonas" disabled onclick="exportExcelZonasCrudo()">
+          📥 Exportar zonas (crudo)
+        </button>
+      </div>
+    </main>
 
-				<footer class="app-footer">
-					<p>Panel Fulfillment v5.0 COMPLETO © 2025</p>
-					<p class="credits">Creado por Gabriel Palazzini by Checho</p>
-				</footer>
-			</div>
+    <footer class="app-footer">
+      <p>Panel Fulfillment v5.0 COMPLETO © 2025</p>
+      <p class="credits">Creado por Gabriel Palazzini</p>
+    </footer>
+  </div>
 
-			<!-- Modales -->
-			<div id="modalBackdrop" class="modal-backdrop" onclick="closeModal()">
-				<div class="modal" onclick="event.stopPropagation()">
-					<div class="modal-header">
-						<div class="modal-title" id="modalTitle">Detalle de Zona</div>
-						<button class="modal-close" onclick="closeModal()">×</button>
-					</div>
-					
-					<div class="modal-filters" id="modalFilters">
-						<div class="filter-group" style="min-width: 200px;">
-							<div class="filter-label">Filtrar por Horario</div>
-							<select id="filterHorario" class="input-select" onchange="applyModalFilters()">
-								<option value="">Todos los horarios</option>
-								<option value="0-6">00:00 - 06:00</option>
-								<option value="6-12">06:00 - 12:00</option>
-								<option value="12-18">12:00 - 18:00</option>
-								<option value="18-24">18:00 - 24:00</option>
-							</select>
-						</div>
-						
-						<div class="filter-group" style="min-width: 200px;">
-							<div class="filter-label">Filtrar por Día</div>
-							<select id="filterDia" class="input-select" onchange="applyModalFilters()">
-								<option value="">Todos los días</option>
-							</select>
-						</div>
-						
-						<div class="filter-group">
-							<label class="checkbox-label">
-								<input type="checkbox" id="selectAllOrders" onchange="toggleSelectAll()">
-								<span>Seleccionar Todas</span>
-							</label>
-						</div>
-					</div>
-					
-					<div class="modal-body" id="modalBody">
-						<div class="loading-message">
-							<div class="spinner"></div>
-							<p>Cargando detalles...</p>
-						</div>
-					</div>
-					
-					<div class="modal-footer" id="modalFooter">
-						<div class="selection-info" id="selectionInfo">
-							0 órdenes seleccionadas
-						</div>
-						<div style="display: flex; gap: 8px;">
-							<button class="btn btn-warning" id="btnExportBEFAN" disabled onclick="exportBEFAN()">
-								📤 Exportar BEFAN (TXT)
-							</button>
-							<button class="btn btn-secondary" onclick="closeModal()">
-								Cerrar
-							</button>
-						</div>
-					</div>
-				</div>
-			</div>
+  <!-- Modales -->
+  <div id="modalBackdrop" class="modal-backdrop" onclick="closeModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle">Detalle de Zona</div>
+        <button class="modal-close" onclick="closeModal()">×</button>
+      </div>
+      
+      <div class="modal-filters" id="modalFilters">
+        <div class="filter-group" style="min-width: 200px;">
+          <div class="filter-label">Filtrar por Horario</div>
+          <select id="filterHorario" class="input-select" onchange="applyModalFilters()">
+            <option value="">Todos los horarios</option>
+            <option value="0-6">00:00 - 06:00</option>
+            <option value="6-12">06:00 - 12:00</option>
+            <option value="12-18">12:00 - 18:00</option>
+            <option value="18-24">18:00 - 24:00</option>
+          </select>
+        </div>
+        
+        <div class="filter-group" style="min-width: 200px;">
+          <div class="filter-label">Filtrar por Día</div>
+          <select id="filterDia" class="input-select" onchange="applyModalFilters()">
+            <option value="">Todos los días</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="selectAllOrders" onchange="toggleSelectAll()">
+            <span>Seleccionar Todas</span>
+          </label>
+        </div>
+      </div>
+      
+      <div class="modal-body" id="modalBody">
+        <div class="loading-message">
+          <div class="spinner"></div>
+          <p>Cargando detalles...</p>
+        </div>
+      </div>
+      
+      <div class="modal-footer" id="modalFooter">
+        <div class="selection-info" id="selectionInfo">
+          0 órdenes seleccionadas
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-warning" id="btnExportBEFAN" disabled onclick="exportBEFAN()">
+            📤 Exportar BEFAN (TXT)
+          </button>
+          <button class="btn btn-secondary" onclick="closeModal()">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
-			<div id="alarmaBackdrop" class="modal-backdrop" onclick="closeAlarmaModal()">
-				<div class="modal" onclick="event.stopPropagation()" style="max-width: 1000px;">
-					<div class="modal-header">
-						<div class="modal-title">🚨 Información de Alarmas</div>
-						<button class="modal-close" onclick="closeAlarmaModal()">×</button>
-					</div>
-					
-					<div class="modal-body" id="alarmaModalBody">
-						<div class="loading-message">
-							<div class="spinner"></div>
-							<p>Cargando datos de alarmas...</p>
-						</div>
-					</div>
-					
-					<div class="modal-footer">
-						<button class="btn btn-primary" onclick="closeAlarmaModal()">
-							Cerrar
-						</button>
-					</div>
-				</div>
-			</div>
+  <div id="alarmaBackdrop" class="modal-backdrop" onclick="closeAlarmaModal()">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width: 1000px;">
+      <div class="modal-header">
+        <div class="modal-title">🚨 Información de Alarmas</div>
+        <button class="modal-close" onclick="closeAlarmaModal()">×</button>
+      </div>
+      
+      <div class="modal-body" id="alarmaModalBody">
+        <div class="loading-message">
+          <div class="spinner"></div>
+          <p>Cargando datos de alarmas...</p>
+        </div>
+      </div>
+      
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeAlarmaModal()">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
 
-			<div id="edificioBackdrop" class="modal-backdrop" onclick="closeEdificioModal()">
-				<div class="modal" onclick="event.stopPropagation()" style="max-width: 1200px;">
-					<div class="modal-header">
-						<div class="modal-title" id="edificioModalTitle">Detalle de Edificio</div>
-						<button class="modal-close" onclick="closeEdificioModal()">×</button>
-					</div>
-					
-					<div class="modal-body" id="edificioModalBody">
-						<div class="loading-message">
-							<div class="spinner"></div>
-							<p>Cargando órdenes del edificio...</p>
-						</div>
-					</div>
-					
-					<div class="modal-footer">
-						<button class="btn btn-secondary" onclick="exportEdificioDetalle()">
-							📥 Exportar órdenes
-						</button>
-						<button class="btn btn-primary" onclick="closeEdificioModal()">
-							Cerrar
-						</button>
-					</div>
-				</div>
-			</div>
-			<!-- ========== FIN PANEL FULFILLMENT CONTENT ========== -->
-		</div>
+  <div id="edificioBackdrop" class="modal-backdrop" onclick="closeEdificioModal()">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width: 1200px;">
+      <div class="modal-header">
+        <div class="modal-title" id="edificioModalTitle">Detalle de Edificio</div>
+        <button class="modal-close" onclick="closeEdificioModal()">×</button>
+      </div>
+      
+      <div class="modal-body" id="edificioModalBody">
+        <div class="loading-message">
+          <div class="spinner"></div>
+          <p>Cargando órdenes del edificio...</p>
+        </div>
+      </div>
+      
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="exportEdificioDetalle()">
+          📥 Exportar órdenes
+        </button>
+        <button class="btn btn-primary" onclick="closeEdificioModal()">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
 
-		<div class="card-footer">
-			<label>Performance Eficiencia y Mejora</label> <a href="mailto:dataofficepem@teco.com.ar" target="_top">dataofficepem@teco.com.ar</a>
-		</div>
-
-	</div>
-
-	<!-- Script principal del Panel Fulfillment - DEBE IR AL FINAL -->
-	<?php echo "<script src='assets/js/app.js?$aleatorio'></script>"; ?>
-
+  <!-- Scripts del Panel - Orden importante -->
+  <script src="assets/js/data-processor.js"></script>
+  <script src="assets/js/app.js"></script>
 </body>
-
-</HTML>
+</html>
