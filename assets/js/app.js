@@ -2241,42 +2241,43 @@ const FMSPanel = {
    */
   render(_ordenes, fmsMap) {
     if (!fmsMap || fmsMap.size === 0) {
-      return '<div class="loading-message"><p>⚠️ No hay datos de FMS/Alarmas cargados</p></div>';
+      return renderFMSMessage('No hay datos de FMS/Alarmas cargados', '⚠️');
     }
 
     const fmsGroups = this.groupByFMS(fmsMap);
     const damageStats = this.getDamageStats(fmsGroups);
+    const filterOptions = this.buildFilterOptions(fmsGroups, damageStats);
 
     let html = `
       <div class="fms-panel">
-        <div class="fms-header" style="background: linear-gradient(135deg, #f39c12 0%, #e74c3c 100%);
-             padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-          <h2 style="margin: 0 0 10px 0; font-size: 24px;">🚨 Panel FMS - Alarmas y Daños</h2>
-          <div style="font-size: 14px; opacity: 0.9;">
-            Elementos monitoreados: ${fmsGroups.length} • Zonas con alarmas: ${fmsMap.size}
+        <div class="card text-white bg-warning shadow-sm mb-3">
+          <div class="card-body">
+            <h2 class="card-title h4 mb-2">🚨 Panel FMS - Alarmas y Daños</h2>
+            <p class="card-text mb-0 small">
+              Elementos monitoreados: ${fmsGroups.length} • Zonas con alarmas: ${fmsMap.size}
+            </p>
           </div>
         </div>
 
-        <div class="fms-filters" style="background: white; padding: 20px; border-radius: 12px;
-             margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px;">
-            <div>
-              <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                🔍 Filtrar por Tipo de Elemento FMS
-              </label>
-              <select id="fmsTipoElemento" onchange="filtrarFMS()"
-                      style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
-                <option value="">Todos los tipos</option>
-              </select>
-            </div>
-            <div>
-              <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                ⚠️ Filtrar por Daño / Alarma
-              </label>
-              <select id="fmsDamage" onchange="filtrarFMS()"
-                      style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
-                <option value="">Todos los daños</option>
-              </select>
+        <div class="card shadow-sm mb-4">
+          <div class="card-body">
+            <div class="form-row">
+              <div class="form-group col-12 col-md-6 col-lg-4">
+                <label class="font-weight-bold text-dark mb-1">
+                  🔍 Filtrar por Tipo de Elemento FMS
+                </label>
+                <select id="fmsTipoElemento" onchange="filtrarFMS()" class="form-control">
+                  ${filterOptions.tipoOptions}
+                </select>
+              </div>
+              <div class="form-group col-12 col-md-6 col-lg-4">
+                <label class="font-weight-bold text-dark mb-1">
+                  ⚠️ Filtrar por Daño / Alarma
+                </label>
+                <select id="fmsDamage" onchange="filtrarFMS()" class="form-control">
+                  ${filterOptions.damageOptions}
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -2293,10 +2294,6 @@ const FMSPanel = {
 
     window.fmsGroupsData = fmsGroups;
     window.fmsDamageStats = damageStats;
-
-    setTimeout(() => {
-      this.populateFilters(fmsGroups, damageStats);
-    }, 100);
 
     return html;
   },
@@ -2361,7 +2358,7 @@ const FMSPanel = {
    */
   renderFMSList(fmsGroups) {
     if (!fmsGroups.length) {
-      return '<div class="loading-message"><p>Sin resultados para los filtros aplicados</p></div>';
+      return '<div class="alert alert-info mb-0">Sin resultados para los filtros aplicados</div>';
     }
 
     let html = '<div class="fms-list">';
@@ -2373,40 +2370,40 @@ const FMSPanel = {
       const damageBadges = Array.from(group.damageSummary.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
-        .map(([damage, count]) => `<span class="badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-muted);">${damage} (${count})</span>`)
-        .join('');
+        .map(([damage, count]) => `<span class="badge badge-light text-muted mr-1 mb-1">${damage} (${count})</span>`)
+        .join(' ');
       const zonas = Array.from(group.zonasAfectadas).sort();
-      const zonasBadges = zonas.map(z => `<span class="badge badge-primary">${z}</span>`).join(' ');
+      const zonasBadges = zonas.map(z => `<span class="badge badge-primary mr-1 mb-1">${z}</span>`).join(' ');
       const damageContent = damageBadges || '<span class="badge badge-secondary">Sin daños reportados</span>';
       const targetId = group.id.replace(/'/g, "\\'");
+      const borderColorClass = alarmasActivas > 0 ? 'border-warning' : 'border-secondary';
 
       html += `
-        <div class="fms-item" style="background: white; padding: 20px; border-radius: 12px;
-             margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-             border-left: 4px solid ${alarmasActivas > 0 ? '#e74c3c' : '#95a5a6'};">
-          <div style="display: flex; justify-content: space-between; align-items: start; gap: 16px;">
-            <div>
-              <h3 style="margin: 0 0 8px 0; color: #333; font-size: 18px;">
-                ${tipoLabel}: ${group.elementCode}
-              </h3>
-              <div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: #666;">
-                <div><strong>Zonas relacionadas:</strong> ${zonas.length}</div>
-                <div><strong>Alarmas activas:</strong> ${alarmasActivas}</div>
-                <div><strong>Total alarmas:</strong> ${totalAlarmas}</div>
+        <div class="card mb-3 shadow-sm border-left ${borderColorClass} fms-item-card">
+          <div class="card-body">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start">
+              <div class="mb-3 mb-md-0">
+                <h3 class="h5 mb-2 text-dark">
+                  ${tipoLabel}: ${group.elementCode}
+                </h3>
+                <div class="d-flex flex-wrap small text-muted">
+                  <div class="mr-3"><strong>Zonas relacionadas:</strong> ${zonas.length}</div>
+                  <div class="mr-3"><strong>Alarmas activas:</strong> ${alarmasActivas}</div>
+                  <div><strong>Total alarmas:</strong> ${totalAlarmas}</div>
+                </div>
               </div>
+              <button class="btn btn-primary btn-sm" onclick="verDetalleFMS('${targetId}')">
+                👁️ Ver detalle
+              </button>
             </div>
-            <button class="btn btn-primary" onclick="verDetalleFMS('${targetId}')"
-                    style="padding: 8px 16px; font-size: 14px; white-space: nowrap;">
-              👁️ Ver detalle
-            </button>
-          </div>
-          <div style="margin-top: 15px;">
-            <div style="font-size: 12px; color: #666; margin-bottom: 6px;"><strong>Daños detectados</strong></div>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">${damageContent}</div>
-          </div>
-          <div style="margin-top: 15px;">
-            <div style="font-size: 12px; color: #666; margin-bottom: 6px;"><strong>Zonas asociadas</strong></div>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">${zonasBadges}</div>
+            <div class="mt-3">
+              <div class="small text-muted font-weight-bold mb-1">Daños detectados</div>
+              <div class="d-flex flex-wrap">${damageContent}</div>
+            </div>
+            <div class="mt-3">
+              <div class="small text-muted font-weight-bold mb-1">Zonas asociadas</div>
+              <div class="d-flex flex-wrap">${zonasBadges}</div>
+            </div>
           </div>
         </div>
       `;
@@ -2416,32 +2413,23 @@ const FMSPanel = {
     return html;
   },
 
-  /**
-   * Pobla los filtros con datos
-   */
-  populateFilters(fmsGroups, damageStats) {
-    const tipoSelect = document.getElementById('fmsTipoElemento');
-    if (tipoSelect) {
-      const tipos = new Set();
-      fmsGroups.forEach(g => g.elementType && tipos.add(g.elementType));
+  buildFilterOptions(fmsGroups, damageStats) {
+    const tipos = new Set();
+    fmsGroups.forEach(g => g.elementType && tipos.add(g.elementType));
 
-      Array.from(tipos).sort().forEach(tipo => {
-        const option = document.createElement('option');
-        option.value = tipo;
-        option.textContent = formatFMSTypeLabel(tipo);
-        tipoSelect.appendChild(option);
-      });
-    }
+    const tipoOptions = [
+      '<option value="">Todos los tipos</option>',
+      ...Array.from(tipos)
+        .sort()
+        .map(tipo => `<option value="${tipo}">${formatFMSTypeLabel(tipo)}</option>`)
+    ].join('');
 
-    const damageSelect = document.getElementById('fmsDamage');
-    if (damageSelect) {
-      damageStats.forEach(([damage, count]) => {
-        const option = document.createElement('option');
-        option.value = damage;
-        option.textContent = `${damage} (${count})`;
-        damageSelect.appendChild(option);
-      });
-    }
+    const damageOptions = [
+      '<option value="">Todos los daños</option>',
+      ...damageStats.map(([damage, count]) => `<option value="${damage}">${damage} (${count})</option>`)
+    ].join('');
+
+    return { tipoOptions, damageOptions };
   }
 };
 
@@ -2449,10 +2437,14 @@ const FMSPanel = {
  * Filtra elementos FMS según los filtros seleccionados
  */
 function filtrarFMS() {
-  const tipoElemento = document.getElementById('fmsTipoElemento')?.value || '';
-  const damageFilter = document.getElementById('fmsDamage')?.value || '';
+  const tipoElementoSelect = document.getElementById('fmsTipoElemento');
+  const damageSelect = document.getElementById('fmsDamage');
+  const container = document.getElementById('fmsListContainer');
 
-  if (!window.fmsGroupsData) return;
+  if (!window.fmsGroupsData || !container || !tipoElementoSelect || !damageSelect) return;
+
+  const tipoElemento = tipoElementoSelect.value || '';
+  const damageFilter = damageSelect.value || '';
 
   let filtrados = window.fmsGroupsData;
 
@@ -2464,10 +2456,7 @@ function filtrarFMS() {
     filtrados = filtrados.filter(g => g.alarmas.some(a => formatAlarmaDamage(a) === damageFilter));
   }
 
-  const container = document.getElementById('fmsListContainer');
-  if (container) {
-    container.innerHTML = FMSPanel.renderFMSList(filtrados);
-  }
+  container.innerHTML = FMSPanel.renderFMSList(filtrados);
 
   toast(`🔍 Filtrado: ${filtrados.length} elemento${filtrados.length === 1 ? '' : 's'} encontrados`);
 }
@@ -3010,6 +2999,13 @@ let allCMTS = [];
 let currentZone = null;
 let selectedOrders = new Set();
 
+const fmsRenderState = {
+  needsRender: true,
+  isRendering: false,
+  lastOrders: [],
+  lastFmsMap: new Map()
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
 });
@@ -3236,6 +3232,54 @@ function runFiltersPipeline() {
   return { filtered, analyzed, cmtsFiltered, territoriosAnalisis };
 }
 
+function renderFMSMessage(message, icon = 'ℹ️') {
+  return `<div class="loading-message"><p>${icon} ${message}</p></div>`;
+}
+
+function updateFMSPendingData(orders, fmsMap) {
+  fmsRenderState.lastOrders = Array.isArray(orders) ? orders : [];
+  fmsRenderState.lastFmsMap = fmsMap instanceof Map ? fmsMap : new Map();
+  fmsRenderState.needsRender = true;
+
+  const fmsPanelEl = document.getElementById('fmsPanel');
+  if (fmsPanelEl && !fmsPanelEl.classList.contains('active')) {
+    fmsPanelEl.innerHTML = renderFMSMessage('El panel FMS se generará al abrir la pestaña.');
+  } else {
+    renderFMSPanelIfNeeded();
+  }
+}
+
+function renderFMSPanelIfNeeded(options = {}) {
+  const fmsPanelEl = document.getElementById('fmsPanel');
+  if (!fmsPanelEl || fmsRenderState.isRendering) return;
+
+  const isActive = fmsPanelEl.classList.contains('active');
+  const shouldRender = options.force || (isActive && fmsRenderState.needsRender);
+
+  if (!shouldRender) return;
+
+  const fmsMap = fmsRenderState.lastFmsMap || new Map();
+  if (!fmsMap.size) {
+    fmsPanelEl.innerHTML = renderFMSMessage('No hay datos de FMS/Alarmas cargados', '⚠️');
+    fmsRenderState.needsRender = false;
+    return;
+  }
+
+  fmsRenderState.isRendering = true;
+  fmsPanelEl.innerHTML = renderFMSMessage('Procesando panel FMS...', '⏳');
+  requestAnimationFrame(() => {
+    try {
+      fmsPanelEl.innerHTML = FMSPanel.render(fmsRenderState.lastOrders || [], fmsMap);
+    } catch (err) {
+      console.error('Error rendering FMS panel', err);
+      fmsPanelEl.innerHTML = renderFMSMessage('No se pudo renderizar el panel FMS.', '❌');
+    } finally {
+      fmsRenderState.needsRender = false;
+      fmsRenderState.isRendering = false;
+    }
+  });
+}
+
 function applyFilters() {
   if (!currentData) return;
 
@@ -3292,11 +3336,8 @@ function applyFilters() {
   document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
   document.getElementById('edificiosPanel').innerHTML = UIRenderer.renderEdificios(filtered);
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
-  const fmsPanelEl = document.getElementById('fmsPanel');
-  if (fmsPanelEl) {
-    const fmsMap = dataProcessor ? dataProcessor.fmsMap : new Map();
-    fmsPanelEl.innerHTML = FMSPanel.render(filtered, fmsMap);
-  }
+  const fmsMap = dataProcessor ? dataProcessor.fmsMap : new Map();
+  updateFMSPendingData(filtered, fmsMap);
 }
 
 function resetFiltersState() {
@@ -3475,9 +3516,13 @@ function filtrarPorTerritorio(territorioNormalizado) {
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
-  
+
   document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
   document.getElementById(`${tabName}Panel`).classList.add('active');
+
+  if (tabName === 'fms') {
+    renderFMSPanelIfNeeded({ force: true });
+  }
 }
 
 function showAlarmaInfo(zoneIdx) {
