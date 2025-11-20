@@ -2244,15 +2244,45 @@ const EdificiosMejorado = {
 // C) NUEVA PESTAÑA FMS CON FILTRADO COMPLETO
 // ═══════════════════════════════════════════════════════════════════
 
+/* ===================== FMS HELPERS ===================== */
+function renderFMSMessage(text, icon='ℹ️'){
+  return `<div class="alert alert-info d-flex align-items-center mb-0">
+    <span style="font-size:18px;margin-right:8px">${icon}</span> ${text}
+  </div>`;
+}
+
+function normalizeText(s){
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().trim();
+}
+
+function formatFMSTypeLabel(t){
+  const v = String(t || '').toUpperCase();
+  if (v.includes('CMTS')) return 'CMTS';
+  if (v.includes('PUERTO')) return 'Puerto';
+  if (v.includes('NODO')) return 'Nodo';
+  if (v.includes('OPTICO') || v.includes('ÓPTICO')) return 'Óptico';
+  if (!v) return 'Elemento';
+  return t;
+}
+
+function formatAlarmaDamage(a){
+  // Soporta estructuras variadas
+  const c = a && (a.causal || a.Causal || a.damage || a.Daño || a.Danio || a['Tipo de daño'] || a.damageClassification || a.incidentClassification);
+  const s = (typeof c === 'string' ? c : (c && c.tipo)) || '';
+  return s || 'Sin dato';
+}
+
+/* ================ FMS PANEL (robusto y sin cuelgues) ================ */
 const FMSPanel = {
   /**
-   * Renderiza la pestaña de FMS con búsqueda y top 10 de alarmas
-   * @param {Array} _ordenes - Órdenes técnicas (no utilizado, se mantiene por compatibilidad)
-   * @param {Map} fmsMap - Mapa de alarmas FMS
-   * @returns {string} - HTML
+   * Renderiza la pestaña de FMS con filtros.
+   * @param {Array} _ordenes - compatible (no usado aquí)
+   * @param {Map} fmsMap - Mapa de alarmas FMS (por zona->alarmas[] o por id->obj)
    */
   render(_ordenes, fmsMap) {
-    if (!fmsMap || fmsMap.size === 0) {
+    if (!fmsMap || typeof fmsMap.size !== 'number' || fmsMap.size === 0) {
       return renderFMSMessage('No hay datos de FMS/Alarmas cargados', '⚠️');
     }
 
@@ -2260,13 +2290,16 @@ const FMSPanel = {
     const damageStats = this.getDamageStats(fmsGroups);
     const filterOptions = this.buildFilterOptions(fmsGroups, damageStats);
 
+    // Top defensivo para no bloquear UI
+    const topGroups = fmsGroups.slice(0, 100);
+
     let html = `
       <div class="fms-panel">
         <div class="card text-white bg-warning shadow-sm mb-3">
           <div class="card-body">
             <h2 class="card-title h4 mb-2">🚨 Panel FMS - Alarmas y Daños</h2>
             <p class="card-text mb-0 small">
-              Elementos monitoreados: ${fmsGroups.length} • Zonas con alarmas: ${fmsMap.size}
+              Elementos monitoreados: ${fmsGroups.length} • Total registros en mapa: ${fmsMap.size}
             </p>
           </div>
         </div>
@@ -2275,18 +2308,14 @@ const FMSPanel = {
           <div class="card-body">
             <div class="form-row">
               <div class="form-group col-12 col-md-6 col-lg-4">
-                <label class="font-weight-bold text-dark mb-1">
-                  🔍 Filtrar por Tipo de Elemento FMS
-                </label>
-                <select id="fmsTipoElemento" onchange="filtrarFMS()" class="form-control">
+                <label class="font-weight-bold text-dark mb-1">🔍 Filtrar por Tipo de Elemento FMS</label>
+                <select id="fmsTipoElemento" class="form-control" onchange="filtrarFMS()">
                   ${filterOptions.tipoOptions}
                 </select>
               </div>
               <div class="form-group col-12 col-md-6 col-lg-4">
-                <label class="font-weight-bold text-dark mb-1">
-                  ⚠️ Filtrar por Daño / Alarma
-                </label>
-                <select id="fmsDamage" onchange="filtrarFMS()" class="form-control">
+                <label class="font-weight-bold text-dark mb-1">⚠️ Filtrar por Daño / Causal</label>
+                <select id="fmsDamage" class="form-control" onchange="filtrarFMS()">
                   ${filterOptions.damageOptions}
                 </select>
               </div>
@@ -2295,21 +2324,18 @@ const FMSPanel = {
         </div>
 
         <div id="fmsListContainer">
-    `;
-
-    html += this.renderFMSList(topGroups, { limitNotice: true });
-
-    html += `
+          ${this.renderFMSList(topGroups, { limitNotice: true })}
         </div>
       </div>
     `;
 
+    // Exponer en window para filtrado y detalle
     window.fmsGroupsData = fmsGroups;
-    window.fmsDamageStats = damageStats;
 
     return html;
   },
 
+  /** Consolida estadísticas globales de daños (para combo) */
   getDamageStats(fmsGroups) {
     const damageCount = new Map();
     fmsGroups.forEach(g => {
@@ -2321,59 +2347,93 @@ const FMSPanel = {
   },
 
   /**
-   * Agrupa alarmas por elementos FMS
+   * Agrupa alarmas por elemento FMS y normaliza estructura
+   * Soporta:
+   *  - Map<zona, Alarma[]> donde Alarma = { elementCode, elementType, isActive, ... }
+   *  - Map<id, { nombre, zonasAfectadas:[], causales:[{tipo}], ... }>
    */
   groupByFMS(fmsMap) {
     const groups = new Map();
 
-    fmsMap.forEach((alarmas, zona) => {
-      alarmas.forEach(alarma => {
-        const key = `${alarma.elementCode || 'SIN_CODIGO'}_${alarma.elementType || 'SIN_TIPO'}`;
+    fmsMap.forEach((val, key) => {
+      // Caso A: Map<zona, alarmas[]>
+      if (Array.isArray(val)) {
+        const zona = key;
+        val.forEach(alarma => {
+          const elementCode = alarma.elementCode || alarma.code || alarma.id || 'Sin código';
+          const elementType = alarma.elementType || alarma.type || 'Elemento';
+          const isActive = !!(alarma.isActive || alarma.activa || alarma.estado === 'ACTIVA');
 
-        if (!groups.has(key)) {
-          groups.set(key, {
-            id: key,
-            elementCode: alarma.elementCode || 'Sin código',
-            elementType: alarma.elementType || 'Sin tipo',
+          const gkey = `${elementCode}__${elementType}`;
+          if (!groups.has(gkey)) {
+            groups.set(gkey, {
+              id: gkey,
+              elementCode,
+              elementType,
+              alarmas: [],
+              zonasAfectadas: new Set(),
+              damageSummary: new Map()
+            });
+          }
+          const g = groups.get(gkey);
+          g.alarmas.push(alarma);
+          g.zonasAfectadas.add(zona);
+          const dKey = formatAlarmaDamage(alarma);
+          g.damageSummary.set(dKey, (g.damageSummary.get(dKey) || 0) + 1);
+          if (isActive) g.__active = (g.__active || 0) + 1;
+        });
+      }
+      // Caso B: Map<id, objeto consolidado>
+      else if (val && typeof val === 'object') {
+        const id = val.id || key;
+        const elementCode = val.elementCode || val.nombre || id || 'Sin código';
+        const elementType = val.elementType || val.tipo || 'Elemento';
+        const zonas = Array.isArray(val.zonasAfectadas) ? val.zonasAfectadas : [];
+        const causales = Array.isArray(val.causales) ? val.causales : [];
+
+        const gkey = `${elementCode}__${elementType}`;
+        if (!groups.has(gkey)) {
+          groups.set(gkey, {
+            id: gkey,
+            elementCode,
+            elementType,
             alarmas: [],
             zonasAfectadas: new Set(),
-            damageSummary: new Map(),
-            incidentSummary: new Map()
+            damageSummary: new Map()
           });
         }
-
-        const group = groups.get(key);
-        group.alarmas.push(alarma);
-        group.zonasAfectadas.add(zona);
-
-        const damageKey = formatAlarmaDamage(alarma);
-        group.damageSummary.set(damageKey, (group.damageSummary.get(damageKey) || 0) + 1);
-
-        const incidentKey = alarma.incidentClassification || alarma.damageClassification || 'Sin clasificación';
-        group.incidentSummary.set(incidentKey, (group.incidentSummary.get(incidentKey) || 0) + 1);
-      });
+        const g = groups.get(gkey);
+        zonas.forEach(z => g.zonasAfectadas.add(z));
+        causales.forEach(c => {
+          const dKey = formatAlarmaDamage(c);
+          g.damageSummary.set(dKey, (g.damageSummary.get(dKey) || 0) + 1);
+        });
+        // No sabemos cuántas están activas: estimación 0
+        g.__active = g.__active || 0;
+      }
     });
 
-    const enriched = Array.from(groups.values())
-      .filter(g => g.alarmas.length > 0)
-      .map(g => ({
+    const enriched = Array.from(groups.values()).map(g => {
+      const activeCount = g.__active || 0;
+      const totalAlarmas =
+        g.alarmas?.length ??
+        Array.from(g.damageSummary.values()).reduce((acc, n) => acc + (n || 0), 0);
+      return {
         ...g,
-        activeCount: g.alarmas.filter(a => a.isActive).length,
-        totalAlarmas: g.alarmas.length
-      }))
-      .sort((a, b) => {
-        if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
-        if (b.totalAlarmas !== a.totalAlarmas) return b.totalAlarmas - a.totalAlarmas;
-        return String(a.elementCode).localeCompare(String(b.elementCode));
-      });
+        activeCount,
+        totalAlarmas
+      };
+    }).sort((a, b) => {
+      if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+      if (b.totalAlarmas !== a.totalAlarmas) return b.totalAlarmas - a.totalAlarmas;
+      return String(a.elementCode).localeCompare(String(b.elementCode));
+    });
 
     enriched.forEach((g, idx) => g.rank = idx + 1);
     return enriched;
   },
 
-  /**
-   * Renderiza lista de elementos FMS
-   */
+  /** Lista de elementos FMS (tarjetas) */
   renderFMSList(fmsGroups, options = {}) {
     const { limitNotice = false } = options;
 
@@ -2382,25 +2442,28 @@ const FMSPanel = {
     }
 
     let html = '';
-
     if (limitNotice) {
-      html += '<div class="alert alert-light border mb-3">Vista resumida. Ajusta la búsqueda para ver otros elementos.</div>';
+      html += '<div class="alert alert-light border mb-3">Vista resumida. Ajustá la búsqueda para ver otros elementos.</div>';
     }
 
     html += '<div class="fms-list">';
 
     fmsGroups.forEach((group, idx) => {
-      const targetId = (group.id || idx).toString().replace(/'/g, "\\'");
-      const zonas = Array.from(group.zonasAfectadas || []);
-      const damageItems = Array.from(group.damageSummary.entries())
+      const tipoLabel = formatFMSTypeLabel(group.elementType);
+      const alarmasActivas = group.activeCount || 0;
+      const totalAlarmas = group.totalAlarmas || 0;
+
+      const damageBadges = Array.from(group.damageSummary.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
         .map(([damage, count]) => `<span class="badge badge-light text-muted mr-1 mb-1">${damage} (${count})</span>`)
         .join(' ');
-      const zonas = Array.from(group.zonasAfectadas).sort();
-      const zonasBadges = zonas.map(z => `<span class="badge badge-primary mr-1 mb-1">${z}</span>`).join(' ');
       const damageContent = damageBadges || '<span class="badge badge-secondary">Sin daños reportados</span>';
-      const targetId = group.id.replace(/'/g, "\\'");
+
+      const zonas = Array.from(group.zonasAfectadas || []).sort();
+      const zonasBadges = zonas.map(z => `<span class="badge badge-primary mr-1 mb-1">${z}</span>`).join(' ');
+
+      const targetId = String(group.id || idx).replace(/'/g, "\\'");
       const borderColorClass = alarmasActivas > 0 ? 'border-warning' : 'border-secondary';
 
       html += `
@@ -2408,18 +2471,14 @@ const FMSPanel = {
           <div class="card-body">
             <div class="d-flex flex-column flex-md-row justify-content-between align-items-start">
               <div class="mb-3 mb-md-0">
-                <h3 class="h5 mb-2 text-dark">
-                  ${tipoLabel}: ${group.elementCode}
-                </h3>
+                <h3 class="h5 mb-2 text-dark">${tipoLabel}: ${group.elementCode}</h3>
                 <div class="d-flex flex-wrap small text-muted">
                   <div class="mr-3"><strong>Zonas relacionadas:</strong> ${zonas.length}</div>
                   <div class="mr-3"><strong>Alarmas activas:</strong> ${alarmasActivas}</div>
                   <div><strong>Total alarmas:</strong> ${totalAlarmas}</div>
                 </div>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="verDetalleFMS('${targetId}')">
-                👁️ Ver detalle
-              </button>
+              <button class="btn btn-primary btn-sm" onclick="verDetalleFMS('${targetId}')">👁️ Ver detalle</button>
             </div>
             <div class="mt-3">
               <div class="small text-muted font-weight-bold mb-1">Daños detectados</div>
@@ -2438,15 +2497,14 @@ const FMSPanel = {
     return html;
   },
 
+  /** Construye opciones para selects de filtro */
   buildFilterOptions(fmsGroups, damageStats) {
     const tipos = new Set();
     fmsGroups.forEach(g => g.elementType && tipos.add(g.elementType));
 
     const tipoOptions = [
       '<option value="">Todos los tipos</option>',
-      ...Array.from(tipos)
-        .sort()
-        .map(tipo => `<option value="${tipo}">${formatFMSTypeLabel(tipo)}</option>`)
+      ...Array.from(tipos).sort().map(tipo => `<option value="${tipo}">${formatFMSTypeLabel(tipo)}</option>`)
     ].join('');
 
     const damageOptions = [
@@ -2458,9 +2516,7 @@ const FMSPanel = {
   }
 };
 
-/**
- * Buscar elementos FMS por código o zona/nodo
- */
+/* ===================== FILTRO & DETALLE ===================== */
 function filtrarFMS() {
   const tipoElementoSelect = document.getElementById('fmsTipoElemento');
   const damageSelect = document.getElementById('fmsDamage');
@@ -2471,25 +2527,23 @@ function filtrarFMS() {
   const tipoElemento = tipoElementoSelect.value || '';
   const damageFilter = damageSelect.value || '';
 
-  if (!window.fmsGroupsData || !container || !searchInput) return;
-
-  const query = TextUtils.normalize(searchInput.value || '');
   let resultados = window.fmsGroupsData;
 
+  if (tipoElemento) {
+    const key = normalizeText(tipoElemento);
+    resultados = resultados.filter(g => normalizeText(g.elementType) === key);
+  }
   if (damageFilter) {
+    const dmg = normalizeText(damageFilter);
     resultados = resultados.filter(g =>
-      g.alarmas.some(a => formatAlarmaDamage(a) === damageFilter)
+      Array.from(g.damageSummary.keys()).some(k => normalizeText(k) === dmg)
     );
   }
 
-  container.innerHTML = FMSPanel.renderFMSList(filtrados);
-
-  container.innerHTML = FMSPanel.renderFMSList(resultados, { limitNotice: !query });
+  // Top defensivo de la lista filtrada
+  container.innerHTML = FMSPanel.renderFMSList(resultados.slice(0, 200), { limitNotice: !tipoElemento && !damageFilter });
 }
 
-/**
- * Ver detalle completo de un elemento FMS
- */
 function verDetalleFMS(idxOrId) {
   const grupos = window.fmsGroupsData || [];
   let fmsItem = null;
@@ -2498,22 +2552,18 @@ function verDetalleFMS(idxOrId) {
     fmsItem = grupos[idxOrId];
   } else {
     const id = String(idxOrId);
-    fmsItem = grupos.find(g => g.id === id);
+    fmsItem = grupos.find(g => String(g.id) === id);
   }
-
   if (!fmsItem) return;
 
   const tipoLabel = formatFMSTypeLabel(fmsItem.elementType);
-  const alarmasActivas = fmsItem.alarmas.filter(a => a.isActive).length;
-  const totalAlarmas = fmsItem.alarmas.length;
+  const alarmasActivas = fmsItem.activeCount || 0;
+  const totalAlarmas = fmsItem.totalAlarmas || 0;
 
   let html = `
     <div class="fms-detalle">
-      <div class="fms-header" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-           padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-        <h2 style="margin: 0 0 10px 0; font-size: 24px;">
-          🚨 ${tipoLabel}: ${fmsItem.elementCode}
-        </h2>
+      <div class="fms-header" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+        <h2 style="margin: 0 0 10px 0; font-size: 24px;">🚨 ${tipoLabel}: ${fmsItem.elementCode}</h2>
         <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 15px; font-size: 14px;">
           <div><strong>Zonas relacionadas:</strong> ${fmsItem.zonasAfectadas.size}</div>
           <div><strong>Alarmas activas:</strong> ${alarmasActivas}</div>
@@ -2529,32 +2579,65 @@ function verDetalleFMS(idxOrId) {
         <div class="table-container">
           <table style="width: 100%; font-size: 13px;">
             <thead>
-              <tr>
-                <th>Daño</th>
-                <th class="number">Cantidad</th>
-              </tr>
+              <tr><th>Daño</th><th class="number">Cantidad</th></tr>
             </thead>
             <tbody>
-    `;
-
-    Array.from(fmsItem.damageSummary.entries())
-      .sort((a, b) => b[1] - a[1])
-      .forEach(([damage, count]) => {
-        html += `
-          <tr>
-            <td>${damage}</td>
-            <td class="number"><strong>${count}</strong></td>
-          </tr>
-        `;
-      });
-
-    html += `
+              ${Array.from(fmsItem.damageSummary.entries()).sort((a,b)=>b[1]-a[1]).map(([d,c])=>(
+                `<tr><td>${d}</td><td class="number"><strong>${c}</strong></td></tr>`
+              )).join('')}
             </tbody>
           </table>
         </div>
       </div>
     `;
   }
+
+  if (fmsItem.alarmas && fmsItem.alarmas.length) {
+    html += `
+      <div class="panel-alarmas">
+        <h3 style="margin: 0 0 12px 0; color: #333; font-size: 18px;">📋 Alarmas (muestra)</h3>
+        <div class="table-container">
+          <table style="width: 100%; font-size: 13px;">
+            <thead>
+              <tr><th>Código</th><th>Tipo</th><th>Estado</th><th>Causal</th></tr>
+            </thead>
+            <tbody>
+              ${fmsItem.alarmas.slice(0,50).map(a=>{
+                const code = a.elementCode || a.code || a.id || '';
+                const typ  = a.elementType || a.type || '';
+                const est  = (a.isActive || a.activa || a.estado==='ACTIVA') ? 'Activa' : 'Histórica';
+                const dmg  = formatAlarmaDamage(a);
+                return `<tr><td>${code}</td><td>${typ}</td><td>${est}</td><td>${dmg}</td></tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  // Zonas asociadas
+  const zonas = Array.from(fmsItem.zonasAfectadas || []).sort();
+  html += `
+    <div class="panel-zonas" style="margin-top: 16px;">
+      <h3 style="margin: 0 0 12px 0; color: #333; font-size: 18px;">📍 Zonas asociadas</h3>
+      <div class="d-flex flex-wrap">${zonas.map(z => `<span class="badge badge-primary mr-1 mb-1">${z}</span>`).join(' ')}</div>
+    </div>
+  </div>`;
+
+  // Si existe el modal de alarmas, úsalo
+  const body = document.getElementById('alarmaModalBody');
+  const backdrop = document.getElementById('alarmaBackdrop');
+  if (body && backdrop) {
+    body.innerHTML = html;
+    backdrop.style.display = 'block';
+  } else {
+    // fallback
+    console.log('[FMS detalle]', fmsItem);
+    alert('Detalle FMS listo en consola.');
+  }
+}
+
 
   html += `
       <div class="panel-zonas" style="margin-bottom: 25px;">
