@@ -2234,7 +2234,7 @@ const EdificiosMejorado = {
 
 const FMSPanel = {
   /**
-   * Renderiza la pestaña de FMS con filtrado por tipo y daño
+   * Renderiza la pestaña de FMS con búsqueda y top 10 de alarmas
    * @param {Array} _ordenes - Órdenes técnicas (no utilizado, se mantiene por compatibilidad)
    * @param {Map} fmsMap - Mapa de alarmas FMS
    * @returns {string} - HTML
@@ -2285,7 +2285,7 @@ const FMSPanel = {
         <div id="fmsListContainer">
     `;
 
-    html += this.renderFMSList(fmsGroups);
+    html += this.renderFMSList(topGroups, { limitNotice: true });
 
     html += `
         </div>
@@ -2332,25 +2332,21 @@ const FMSPanel = {
       });
     });
 
-    return Array.from(groups.values())
+    const enriched = Array.from(groups.values())
       .filter(g => g.alarmas.length > 0)
-      .sort((a, b) => b.alarmas.length - a.alarmas.length);
-  },
-
-  /**
-   * Obtiene estadísticas globales de daños
-   */
-  getDamageStats(fmsGroups) {
-    const stats = new Map();
-
-    fmsGroups.forEach(group => {
-      group.alarmas.forEach(alarma => {
-        const damageKey = formatAlarmaDamage(alarma);
-        stats.set(damageKey, (stats.get(damageKey) || 0) + 1);
+      .map(g => ({
+        ...g,
+        activeCount: g.alarmas.filter(a => a.isActive).length,
+        totalAlarmas: g.alarmas.length
+      }))
+      .sort((a, b) => {
+        if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+        if (b.totalAlarmas !== a.totalAlarmas) return b.totalAlarmas - a.totalAlarmas;
+        return String(a.elementCode).localeCompare(String(b.elementCode));
       });
-    });
 
-    return Array.from(stats.entries()).sort((a, b) => b[1] - a[1]);
+    enriched.forEach((g, idx) => g.rank = idx + 1);
+    return enriched;
   },
 
   /**
@@ -2361,13 +2357,18 @@ const FMSPanel = {
       return '<div class="alert alert-info mb-0">Sin resultados para los filtros aplicados</div>';
     }
 
-    let html = '<div class="fms-list">';
+    let html = '';
 
-    fmsGroups.forEach(group => {
-      const alarmasActivas = group.alarmas.filter(a => a.isActive).length;
-      const totalAlarmas = group.alarmas.length;
-      const tipoLabel = formatFMSTypeLabel(group.elementType);
-      const damageBadges = Array.from(group.damageSummary.entries())
+    if (limitNotice) {
+      html += '<div class="alert alert-light border mb-3">Vista resumida. Ajusta la búsqueda para ver otros elementos.</div>';
+    }
+
+    html += '<div class="fms-list">';
+
+    fmsGroups.forEach((group, idx) => {
+      const targetId = (group.id || idx).toString().replace(/'/g, "\\'");
+      const zonas = Array.from(group.zonasAfectadas || []);
+      const damageItems = Array.from(group.damageSummary.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
         .map(([damage, count]) => `<span class="badge badge-light text-muted mr-1 mb-1">${damage} (${count})</span>`)
@@ -2434,7 +2435,7 @@ const FMSPanel = {
 };
 
 /**
- * Filtra elementos FMS según los filtros seleccionados
+ * Buscar elementos FMS por código o zona/nodo
  */
 function filtrarFMS() {
   const tipoElementoSelect = document.getElementById('fmsTipoElemento');
@@ -2446,11 +2447,10 @@ function filtrarFMS() {
   const tipoElemento = tipoElementoSelect.value || '';
   const damageFilter = damageSelect.value || '';
 
-  let filtrados = window.fmsGroupsData;
+  if (!window.fmsGroupsData || !container || !searchInput) return;
 
-  if (tipoElemento) {
-    filtrados = filtrados.filter(g => g.elementType === tipoElemento);
-  }
+  const query = TextUtils.normalize(searchInput.value || '');
+  let resultados = window.fmsGroupsData;
 
   if (damageFilter) {
     filtrados = filtrados.filter(g => g.alarmas.some(a => formatAlarmaDamage(a) === damageFilter));
@@ -2458,7 +2458,7 @@ function filtrarFMS() {
 
   container.innerHTML = FMSPanel.renderFMSList(filtrados);
 
-  toast(`🔍 Filtrado: ${filtrados.length} elemento${filtrados.length === 1 ? '' : 's'} encontrados`);
+  container.innerHTML = FMSPanel.renderFMSList(resultados, { limitNotice: !query });
 }
 
 /**
