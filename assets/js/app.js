@@ -2737,6 +2737,9 @@ function toggleEquiposGrupo(zona){
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(window.lastFilteredOrders || []);
 }
 
+/* =========================================
+   HEADERS DE EXPORT
+   ========================================= */
 const ZONE_EXPORT_HEADERS = [
   'Fecha',
   'ZonaHFC',
@@ -2757,6 +2760,9 @@ const ZONE_EXPORT_HEADERS = [
   'TipoEquipo'
 ];
 
+/* =========================================
+   MAPEO DE CAMPOS DE ORDEN (aliases)
+   ========================================= */
 const ORDER_FIELD_KEYS = {
   fecha: [
     'Fecha de creación',
@@ -2841,13 +2847,17 @@ const ORDER_FIELD_KEYS = {
     'OT_UCA',
     'Nro OT UCA'
   ],
+  // Agrego más aliases frecuentes y una variante con paréntesis
   diagnostico: [
     'Diagnostico Tecnico',
     'Diagnóstico Técnico',
     'Diagnostico',
     'Diagnóstico',
     'Diagnostico Cliente',
-    'Diagnostico tecnico'
+    'Diagnostico tecnico',
+    'Diagnóstico tecnico',
+    'Diagnóstico Técnico (Detalle)',
+    'Diagnostico Técnico (Detalle)'
   ],
   tipo: [
     'Tipo',
@@ -2892,8 +2902,41 @@ const ORDER_FIELD_KEYS = {
   ]
 };
 
+/* =========================================
+   NORMALIZACIÓN Y PICK ROBUSTO
+   ========================================= */
+function normalizeLabel(s){
+  if (!s) return '';
+  return String(s)
+    .normalize('NFD')                // separa acentos
+    .replace(/[\u0300-\u036f]/g, '') // quita diacríticos
+    .toLowerCase()
+    .replace(/\s+/g, ' ')            // colapsa espacios
+    .replace(/[^\w\s:./-]/g, '')     // limpia simbolitos raros pero deja dos puntos/guiones comunes
+    .trim();
+}
+
+// Construye (y cachea) un índice de headers normalizados del row
+function ensureNormalizedHeaderIndex(obj){
+  if (!obj || typeof obj !== 'object') return {};
+  if (obj.__normIndex) return obj.__normIndex;
+
+  const idx = {};
+  for (const k of Object.keys(obj)){
+    const nk = normalizeLabel(k);
+    if (!idx[nk]) idx[nk] = k; // guarda key original para recuperar el valor exacto
+  }
+  Object.defineProperty(obj, '__normIndex', {
+    value: idx,
+    enumerable: false,
+    configurable: false
+  });
+  return idx;
+}
+
 function pickFirstValue(obj, keys){
   if (!obj || !keys) return '';
+  // 1) Intento exacto primero
   for (const key of keys){
     if (!key) continue;
     const value = obj[key];
@@ -2902,9 +2945,40 @@ function pickFirstValue(obj, keys){
       if (str) return str;
     }
   }
+  // 2) Intento por equivalencia normalizada (ignora acentos/case/espacios)
+  const normIdx = ensureNormalizedHeaderIndex(obj);
+  for (const key of keys){
+    if (!key) continue;
+    const nk = normalizeLabel(key);
+    const original = normIdx[nk];
+    if (original !== undefined){
+      const value = obj[original];
+      if (value !== null && value !== undefined){
+        const str = String(value).trim();
+        if (str) return str;
+      }
+    }
+  }
+  // 3) Fallback específico para "Diagnostico" por si viene con sufijos tipo "(Descripción)"
+  //    Busca la PRIMERA columna cuyo normalizado empiece con 'diagnostico'
+  const keysNorm = Object.keys(normIdx);
+  if (keys === ORDER_FIELD_KEYS.diagnostico){
+    const kFound = keysNorm.find(k => k.startsWith('diagnostico'));
+    if (kFound){
+      const original = normIdx[kFound];
+      const v = obj[original];
+      if (v !== null && v !== undefined){
+        const str = String(v).trim();
+        if (str) return str;
+      }
+    }
+  }
   return '';
 }
 
+/* =========================================
+   UBICACIÓN Y ROW BUILDER
+   ========================================= */
 function buildUbicacion(order){
   const calle = pickFirstValue(order, ORDER_FIELD_KEYS.ubicacionCalle);
   const altura = pickFirstValue(order, ORDER_FIELD_KEYS.ubicacionAltura);
@@ -2931,23 +3005,28 @@ function buildOrderExportRow(order, zoneInfo){
   const meta = order.__meta || {};
 
   let fecha = pickFirstValue(order, ORDER_FIELD_KEYS.fecha);
-  if (!fecha && meta.fecha){
-    fecha = DateUtils.format(meta.fecha);
+  if (!fecha && meta.fecha && typeof DateUtils !== 'undefined' && DateUtils.format){
+    try { fecha = DateUtils.format(meta.fecha); } catch(e){ /* noop */ }
   }
 
   const zonaHFC = meta.zonaHFC || zoneInfo?.zonaHFC || pickFirstValue(order, ORDER_FIELD_KEYS.zonaHFC) || zoneInfo?.zona || '';
-  const zonaFTTH = meta.zonaFTTH || zoneInfo?.zonaFTTH || pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH);
-  const territorio = meta.territorio || pickFirstValue(order, ORDER_FIELD_KEYS.territorio);
+  const zonaFTTH = meta.zonaFTTH || zoneInfo?.zonaFTTH || pickFirstValue(order, ORDER_FIELD_KEYS.zonaFTTH) || '';
+  const territorio = meta.territorio || pickFirstValue(order, ORDER_FIELD_KEYS.territorio) || '';
   const ubicacion = buildUbicacion(order);
-  const caso = meta.numeroCaso || pickFirstValue(order, ORDER_FIELD_KEYS.caso);
-  const numeroOrden = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOrden);
-  const numeroOTuca = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOTuca);
-  const diagnostico = pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico);
+  const caso = meta.numeroCaso || pickFirstValue(order, ORDER_FIELD_KEYS.caso) || '';
+  const numeroOrden = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOrden) || '';
+  const numeroOTuca = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOTuca) || '';
+
+  // Clave: robustecer este campo
+  const diagnostico = pickFirstValue(order, ORDER_FIELD_KEYS.diagnostico) || '';
+
   const tipo = pickFirstValue(order, ORDER_FIELD_KEYS.tipo) || zoneInfo?.tipo || '';
-  const tipoTrabajo = pickFirstValue(order, ORDER_FIELD_KEYS.tipoTrabajo);
-  const estado1 = pickFirstValue(order, ORDER_FIELD_KEYS.estado1);
-  let estado2 = pickFirstValue(order, ORDER_FIELD_KEYS.estado2);
-  let estado3 = pickFirstValue(order, ORDER_FIELD_KEYS.estado3);
+  const tipoTrabajo = pickFirstValue(order, ORDER_FIELD_KEYS.tipoTrabajo) || '';
+
+  const estado1 = pickFirstValue(order, ORDER_FIELD_KEYS.estado1) || '';
+  let estado2 = pickFirstValue(order, ORDER_FIELD_KEYS.estado2) || '';
+  let estado3 = pickFirstValue(order, ORDER_FIELD_KEYS.estado3) || '';
+
   if (estado3 && estado2 && estado3 === estado2){
     const alternativas = ['Estado final', 'Estado gestión', 'Estado Gestion', 'Estado detalle'];
     const altern = pickFirstValue(order, alternativas);
@@ -2956,27 +3035,27 @@ function buildOrderExportRow(order, zoneInfo){
     }
   }
 
-  let mac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
+  let mac = pickFirstValue(order, ORDER_FIELD_KEYS.mac) || '';
   let modelo = '';
   let tipoEquipo = '';
-  
+
   // Intentar extraer dispositivos si no están en meta
   if (!Array.isArray(meta.dispositivos) || !meta.dispositivos.length) {
-    const colInfo = findDispositivosColumn(order);
-    if (colInfo && order[colInfo]) {
-      const dispositivos = TextUtils.parseDispositivosJSON(order[colInfo]);
-      if (dispositivos && dispositivos.length) {
-        meta.dispositivos = dispositivos;
+    if (typeof findDispositivosColumn === 'function'){
+      const colInfo = findDispositivosColumn(order);
+      if (colInfo && order[colInfo] && typeof TextUtils !== 'undefined' && TextUtils.parseDispositivosJSON){
+        try {
+          const dispositivos = TextUtils.parseDispositivosJSON(order[colInfo]);
+          if (dispositivos && dispositivos.length) meta.dispositivos = dispositivos;
+        } catch(e){ /* noop */ }
       }
     }
   }
-  
+
   // Extraer MAC, Modelo y Tipo de equipo del primer dispositivo
   if (Array.isArray(meta.dispositivos) && meta.dispositivos.length){
-    const device = meta.dispositivos[0];
-    if (!mac) {
-      mac = String(device.macAddress || device.mac || '').trim();
-    }
+    const device = meta.dispositivos[0] || {};
+    if (!mac) mac = String(device.macAddress || device.mac || '').trim();
     modelo = String(device.model || device.modelo || '').trim();
     tipoEquipo = String(device.type || device.tipo || '').trim();
   }
@@ -3001,6 +3080,7 @@ function buildOrderExportRow(order, zoneInfo){
     TipoEquipo: tipoEquipo || ''
   };
 }
+
 
 /* =================== EXPORT: helpers y builders =================== */
 function buildZoneExportRows(zoneData){
