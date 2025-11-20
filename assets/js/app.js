@@ -1,5 +1,17 @@
 console.log('🚀 Panel v5.0 COMPLETO - Territorios Críticos + Filtros Equipos + Stats Clickeables');
 
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 const CONFIG = {
   codigo_befan: 'FR461',
   defaultDays: 3,
@@ -2298,6 +2310,16 @@ const FMSPanel = {
     return html;
   },
 
+  getDamageStats(fmsGroups) {
+    const damageCount = new Map();
+    fmsGroups.forEach(g => {
+      g.damageSummary.forEach((count, damage) => {
+        damageCount.set(damage, (damageCount.get(damage) || 0) + count);
+      });
+    });
+    return Array.from(damageCount.entries()).sort((a, b) => b[1] - a[1]);
+  },
+
   /**
    * Agrupa alarmas por elementos FMS
    */
@@ -2352,7 +2374,9 @@ const FMSPanel = {
   /**
    * Renderiza lista de elementos FMS
    */
-  renderFMSList(fmsGroups) {
+  renderFMSList(fmsGroups, options = {}) {
+    const { limitNotice = false } = options;
+
     if (!fmsGroups.length) {
       return '<div class="alert alert-info mb-0">Sin resultados para los filtros aplicados</div>';
     }
@@ -2453,7 +2477,9 @@ function filtrarFMS() {
   let resultados = window.fmsGroupsData;
 
   if (damageFilter) {
-    filtrados = filtrados.filter(g => g.alarmas.some(a => formatAlarmaDamage(a) === damageFilter));
+    resultados = resultados.filter(g =>
+      g.alarmas.some(a => formatAlarmaDamage(a) === damageFilter)
+    );
   }
 
   container.innerHTML = FMSPanel.renderFMSList(filtrados);
@@ -2998,6 +3024,14 @@ let allZones = [];
 let allCMTS = [];
 let currentZone = null;
 let selectedOrders = new Set();
+window.equiposOpen = new Set();
+
+const fmsRenderState = {
+  needsRender: true,
+  isRendering: false,
+  lastOrders: [],
+  lastFmsMap: new Map()
+};
 
 const fmsRenderState = {
   needsRender: true,
