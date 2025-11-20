@@ -1051,6 +1051,15 @@ body.modal-open { overflow: hidden; }
   gap: var(--spacing-md);
 }
 
+/* Ajustes de compatibilidad Bootstrap 4.6 para el panel FMS */
+.fms-panel .card { border-radius: 0.5rem; }
+.fms-panel .fms-item-card { border-left-width: 4px !important; }
+.fms-panel .badge-light {
+  background-color: #f8f9fa;
+  border: 1px solid #e1e5eb;
+  color: #6c757d;
+}
+
 @media (max-width: 768px) {
   .header-title h1 { font-size: 1.25rem; }
   .filters-panel { grid-template-columns: 1fr; }
