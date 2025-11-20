@@ -4,6 +4,8 @@
     return;
   }
 
+  const stripAccentsLocal = (s = '') => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
 class DataProcessor {
   constructor() {
     this.consolidado1 = null;
@@ -39,7 +41,7 @@ class DataProcessor {
     }
 
     const dynamicKey = Object.keys(row).find(k => {
-      const normalized = stripAccents(k).toLowerCase();
+      const normalized = stripAccentsLocal(k).toLowerCase();
       return normalized.includes('numero') && (normalized.includes('cita') || normalized.includes('caso') || normalized.includes('cuenta'));
     });
 
@@ -51,6 +53,32 @@ class DataProcessor {
     }
 
     return '';
+  }
+
+  normalizeId(value) {
+    if (value === undefined || value === null) return '';
+    const str = String(value).trim();
+    if (!str) return '';
+
+    // Unifica IDs que vienen como números o con sufijo .0 desde Excel
+    if (/^-?\d+(\.0+)?$/.test(str)) {
+      return str.replace(/\.0+$/, '');
+    }
+
+    return str;
+  }
+
+  buildRowSignature(row) {
+    if (!row || typeof row !== 'object') return '';
+    const keys = Object.keys(row)
+      .filter(k => row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '')
+      .sort();
+
+    if (!keys.length) return '';
+
+    return keys
+      .map(k => `${stripAccentsLocal(k).toLowerCase()}=${String(row[k]).trim()}`)
+      .join('|');
   }
   
   async loadExcel(file, tipo) {
@@ -282,39 +310,52 @@ class DataProcessor {
 
     const map = new Map();
     let missingIdCount = 0;
+    let dedupCount = 0;
 
-    const ensureId = (value, prefix, idx) => {
-      const id = value && String(value).trim();
-      if (id) return id;
-      missingIdCount++;
-      return `${prefix}${idx + 1}`;
+    const mergeInto = (target, source) => {
+      Object.keys(source).forEach(key => {
+        const incoming = source[key];
+        const current = target[key];
+        if ((current === undefined || current === null || current === '') && incoming !== undefined && incoming !== null && String(incoming).trim() !== '') {
+          target[key] = incoming;
+        }
+      });
     };
 
-    this.consolidado1.forEach((r, idx) => {
-      const cita = ensureId(this.getOrderId(r), 'c1-', idx);
-      if (!map.has(cita)) {
-        map.set(cita, { ...r, _merged: false });
-      }
-    });
+    const upsertRow = (rows, tag) => {
+      if (!Array.isArray(rows)) return;
 
-    this.consolidado2.forEach((r, idx) => {
-      const cita = ensureId(this.getOrderId(r), 'c2-', idx);
-      if (map.has(cita)) {
-        const existing = map.get(cita);
-        Object.keys(r).forEach(key => {
-          if (!existing[key] || existing[key] === '') {
-            existing[key] = r[key];
+      rows.forEach((r, idx) => {
+        const orderId = this.normalizeId(this.getOrderId(r));
+        let key = orderId;
+
+        if (!key) {
+          const signature = this.buildRowSignature(r);
+          if (signature) {
+            key = `sig:${signature}`;
+          } else {
+            missingIdCount++;
+            key = `${tag}-auto-${idx + 1}`;
           }
-        });
-        existing._merged = true;
-      } else {
-        map.set(cita, { ...r, _merged: false });
-      }
-    });
+        }
+
+        if (map.has(key)) {
+          mergeInto(map.get(key), r);
+          map.get(key)._merged = true;
+          dedupCount++;
+        } else {
+          map.set(key, { ...r, _merged: false });
+        }
+      });
+    };
+
+    upsertRow(this.consolidado1, 'c1');
+    upsertRow(this.consolidado2, 'c2');
 
     const result = Array.from(map.values());
-    const suffix = missingIdCount > 0 ? ` (asignados ${missingIdCount} IDs faltantes)` : '';
-    console.log(`✅ Total órdenes únicas (deduplicadas): ${result.length}${suffix}`);
+    const suffix = missingIdCount > 0 ? ` • IDs asignados por fallback: ${missingIdCount}` : '';
+    const dedupSuffix = dedupCount > 0 ? ` • Duplicados fusionados: ${dedupCount}` : '';
+    console.log(`✅ Total órdenes únicas (deduplicadas): ${result.length}${suffix}${dedupSuffix}`);
 
     return result;
   }
