@@ -914,40 +914,37 @@ class DataProcessor {
   
   merge() {
     if (!this.consolidado1 && !this.consolidado2) return [];
-    if (!this.consolidado1) return this.consolidado2 || [];
-    if (!this.consolidado2) return this.consolidado1 || [];
-    
+
     const map = new Map();
-    
-    this.consolidado1.forEach(r => {
-      const cita = r['Número de cita'];
-      if (cita) {
-        if (!map.has(cita)) {
-          map.set(cita, { ...r, _merged: false });
-        }
+
+    const addOrder = (order = {}, source, index = 0) => {
+      const numeroOrden = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOrden);
+      const numeroOTuca = pickFirstValue(order, ORDER_FIELD_KEYS.numeroOTuca);
+      const numeroCaso = pickFirstValue(order, ORDER_FIELD_KEYS.caso);
+
+      const key = numeroOrden || numeroOTuca || numeroCaso || `${source}-${index}`;
+
+      if (!map.has(key)) {
+        map.set(key, { ...order, _merged: false });
+        return;
       }
-    });
-    
-    this.consolidado2.forEach(r => {
-      const cita = r['Número de cita'];
-      if (cita) {
-        if (map.has(cita)) {
-          const existing = map.get(cita);
-          Object.keys(r).forEach(key => {
-            if (!existing[key] || existing[key] === '') {
-              existing[key] = r[key];
-            }
-          });
-          existing._merged = true;
-        } else {
-          map.set(cita, { ...r, _merged: false });
+
+      const existing = map.get(key);
+      Object.keys(order).forEach(field => {
+        const value = order[field];
+        if (existing[field] === undefined || existing[field] === '') {
+          existing[field] = value;
         }
-      }
-    });
-    
+      });
+      existing._merged = true;
+    };
+
+    (this.consolidado1 || []).forEach((r, idx) => addOrder(r, 'c1', idx));
+    (this.consolidado2 || []).forEach((r, idx) => addOrder(r, 'c2', idx));
+
     const result = Array.from(map.values());
     console.log(`✅ Total órdenes únicas (deduplicadas): ${result.length}`);
-    
+
     return result;
   }
   
