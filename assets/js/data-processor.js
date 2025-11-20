@@ -387,27 +387,60 @@ class DataProcessor {
     
     console.log('📊 Procesando alarmas FMS...');
     
+    // Log de columnas disponibles para debugging
+    if (this.fmsData.length > 0) {
+      const cols = Object.keys(this.fmsData[0]);
+      console.log('📋 Columnas FMS disponibles:', cols.slice(0, 15).join(', ') + (cols.length > 15 ? '...' : ''));
+    }
+    
+    // Función para buscar valor en múltiples columnas posibles
+    const getField = (row, ...keys) => {
+      for (const key of keys) {
+        if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
+          return String(row[key]).trim();
+        }
+      }
+      return '';
+    };
+    
     this.fmsData.forEach(f => {
-      const zonaTecnica = String(f['networkElement.technicalZone'] || '').trim();
-      if (!zonaTecnica) return;
+      // Buscar zona técnica en múltiples columnas posibles
+      const zonaTecnica = getField(f,
+        'networkElement.technicalZone',
+        'technicalZone',
+        'Zona Tecnica',
+        'ZonaTecnica',
+        'zona_tecnica',
+        'ZONA_TECNICA',
+        'Zona',
+        'zona',
+        'ZONA',
+        'technical_zone',
+        'TechnicalZone'
+      );
+      
+      if (!zonaTecnica) {
+        return;
+      }
       
       const alarma = {
-        eventId: f['eventId'] || '',
-        type: f['type'] || '',
-        creationDate: f['creationDate'] || '',
-        recoveryDate: f['recoveryDate'] || '',
-        elementType: f['networkElement.type'] || '',
-        elementCode: f['networkElement.code'] || '',
-        damage: f['damage'] || '',
-        incidentClassification: f['incidentClassification'] || '',
-        damageClassification: f['damageClassification'] || '',
-        claims: f['claims'] || '',
-        childCount: f['networkElement.childCount'] || '',
-        cmCount: f['networkElement.cmCount'] || '',
-        taskName: f['task.name'] || f['taskName'] || f['workTaskName'] || f['task'] || '',
-        taskType: f['task.type'] || f['taskType'] || '',
-        description: f['description'] || f['alarmDescription'] || '',
-        isActive: !f['recoveryDate'] || f['recoveryDate'] === ''
+        eventId: getField(f, 'eventId', 'EventId', 'event_id', 'ID', 'id'),
+        type: getField(f, 'type', 'Type', 'tipo', 'Tipo', 'TIPO'),
+        creationDate: getField(f, 'creationDate', 'CreationDate', 'creation_date', 'Fecha', 'fecha', 'FechaCreacion'),
+        recoveryDate: getField(f, 'recoveryDate', 'RecoveryDate', 'recovery_date', 'FechaRecuperacion'),
+        elementType: getField(f, 'networkElement.type', 'elementType', 'ElementType', 'TipoElemento', 'tipo_elemento'),
+        elementCode: getField(f, 'networkElement.code', 'elementCode', 'ElementCode', 'CodigoElemento', 'codigo'),
+        damage: getField(f, 'damage', 'Damage', 'daño', 'Daño', 'DAÑO'),
+        incidentClassification: getField(f, 'incidentClassification', 'IncidentClassification', 'ClasificacionIncidente'),
+        damageClassification: getField(f, 'damageClassification', 'DamageClassification', 'ClasificacionDaño'),
+        claims: getField(f, 'claims', 'Claims', 'reclamos', 'Reclamos', 'RECLAMOS'),
+        childCount: getField(f, 'networkElement.childCount', 'childCount', 'ChildCount', 'CantidadHijos'),
+        cmCount: getField(f, 'networkElement.cmCount', 'cmCount', 'CmCount', 'CantidadCM'),
+        taskName: getField(f, 'task.name', 'taskName', 'TaskName', 'NombreTarea', 'workTaskName', 'task'),
+        taskType: getField(f, 'task.type', 'taskType', 'TaskType', 'TipoTarea'),
+        description: getField(f, 'description', 'Description', 'descripcion', 'Descripcion', 'alarmDescription', 'DESCRIPCION'),
+        address: getField(f, 'address', 'Address', 'direccion', 'Direccion', 'DIRECCION', 'networkElement.address'),
+        isActive: !getField(f, 'recoveryDate', 'RecoveryDate', 'recovery_date', 'FechaRecuperacion')
       };
       
       if (!this.fmsMap.has(zonaTecnica)) {
@@ -417,6 +450,14 @@ class DataProcessor {
     });
     
     console.log(`✅ Procesadas alarmas para ${this.fmsMap.size} zonas técnicas`);
+    
+    // Log de ejemplo si hay datos
+    if (this.fmsMap.size > 0) {
+      const primeraZona = this.fmsMap.keys().next().value;
+      console.log(`📍 Ejemplo: Zona "${primeraZona}" tiene ${this.fmsMap.get(primeraZona).length} alarmas`);
+    } else {
+      console.warn('⚠️ No se encontraron zonas técnicas en el archivo FMS. Verificá los nombres de columnas.');
+    }
   }
   
   merge() {
