@@ -2257,7 +2257,8 @@ const FMSPanel = {
     }
 
     const fmsGroups = this.groupByFMS(fmsMap);
-    const topGroups = fmsGroups.slice(0, 10);
+    const damageStats = this.getDamageStats(fmsGroups);
+    const filterOptions = this.buildFilterOptions(fmsGroups, damageStats);
 
     let html = `
       <div class="fms-panel">
@@ -2270,20 +2271,24 @@ const FMSPanel = {
           </div>
         </div>
 
-        <div class="card shadow-sm mb-3">
+        <div class="card shadow-sm mb-4">
           <div class="card-body">
-            <div class="form-row align-items-center">
-              <div class="form-group col-12 col-md-8 mb-3 mb-md-0">
+            <div class="form-row">
+              <div class="form-group col-12 col-md-6 col-lg-4">
                 <label class="font-weight-bold text-dark mb-1">
-                  🔎 Buscar por código FMS o nodo/zona
+                  🔍 Filtrar por Tipo de Elemento FMS
                 </label>
-                <input type="search" id="fmsSearch" class="form-control" oninput="buscarFMS()"
-                       placeholder="Ej: 1000A, NODO 12, Zona Norte" aria-label="Buscar alarmas FMS" />
+                <select id="fmsTipoElemento" onchange="filtrarFMS()" class="form-control">
+                  ${filterOptions.tipoOptions}
+                </select>
               </div>
-              <div class="form-group col-12 col-md-4 mb-0">
-                <div class="alert alert-info py-2 mb-0 small">
-                  Mostrando el <strong>Top 10</strong> por alarmas activas. Usa la búsqueda para un elemento puntual.
-                </div>
+              <div class="form-group col-12 col-md-6 col-lg-4">
+                <label class="font-weight-bold text-dark mb-1">
+                  ⚠️ Filtrar por Daño / Alarma
+                </label>
+                <select id="fmsDamage" onchange="filtrarFMS()" class="form-control">
+                  ${filterOptions.damageOptions}
+                </select>
               </div>
             </div>
           </div>
@@ -2300,6 +2305,7 @@ const FMSPanel = {
     `;
 
     window.fmsGroupsData = fmsGroups;
+    window.fmsDamageStats = damageStats;
 
     return html;
   },
@@ -2378,7 +2384,7 @@ const FMSPanel = {
     let html = '';
 
     if (limitNotice) {
-      html += '<div class="alert alert-light border mb-3">Vista resumida (Top 10). Ajusta los filtros para ver otros elementos.</div>';
+      html += '<div class="alert alert-light border mb-3">Vista resumida. Ajusta la búsqueda para ver otros elementos.</div>';
     }
 
     html += '<div class="fms-list">';
@@ -2386,18 +2392,15 @@ const FMSPanel = {
     fmsGroups.forEach((group, idx) => {
       const targetId = (group.id || idx).toString().replace(/'/g, "\\'");
       const zonas = Array.from(group.zonasAfectadas || []);
-      const alarmasActivas = group.activeCount || 0;
-      const totalAlarmas = group.totalAlarmas || 0;
-      const tipoLabel = formatFMSTypeLabel(group.elementType);
-
       const damageItems = Array.from(group.damageSummary.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
         .map(([damage, count]) => `<span class="badge badge-light text-muted mr-1 mb-1">${damage} (${count})</span>`)
         .join(' ');
-
-      const zonasBadges = zonas.sort().map(z => `<span class="badge badge-primary mr-1 mb-1">${z}</span>`).join(' ');
-      const damageContent = damageItems || '<span class="badge badge-secondary">Sin daños reportados</span>';
+      const zonas = Array.from(group.zonasAfectadas).sort();
+      const zonasBadges = zonas.map(z => `<span class="badge badge-primary mr-1 mb-1">${z}</span>`).join(' ');
+      const damageContent = damageBadges || '<span class="badge badge-secondary">Sin daños reportados</span>';
+      const targetId = group.id.replace(/'/g, "\\'");
       const borderColorClass = alarmasActivas > 0 ? 'border-warning' : 'border-secondary';
 
       html += `
@@ -2433,24 +2436,45 @@ const FMSPanel = {
 
     html += '</div>';
     return html;
+  },
+
+  buildFilterOptions(fmsGroups, damageStats) {
+    const tipos = new Set();
+    fmsGroups.forEach(g => g.elementType && tipos.add(g.elementType));
+
+    const tipoOptions = [
+      '<option value="">Todos los tipos</option>',
+      ...Array.from(tipos)
+        .sort()
+        .map(tipo => `<option value="${tipo}">${formatFMSTypeLabel(tipo)}</option>`)
+    ].join('');
+
+    const damageOptions = [
+      '<option value="">Todos los daños</option>',
+      ...damageStats.map(([damage, count]) => `<option value="${damage}">${damage} (${count})</option>`)
+    ].join('');
+
+    return { tipoOptions, damageOptions };
   }
 };
 
+/**
+ * Buscar elementos FMS por código o zona/nodo
+ */
 function filtrarFMS() {
   const tipoElementoSelect = document.getElementById('fmsTipoElemento');
   const damageSelect = document.getElementById('fmsDamage');
   const container = document.getElementById('fmsListContainer');
 
-  if (!window.fmsGroupsData || !container) return;
+  if (!window.fmsGroupsData || !container || !tipoElementoSelect || !damageSelect) return;
 
-  const tipoElemento = tipoElementoSelect?.value || '';
-  const damageFilter = damageSelect?.value || '';
+  const tipoElemento = tipoElementoSelect.value || '';
+  const damageFilter = damageSelect.value || '';
 
+  if (!window.fmsGroupsData || !container || !searchInput) return;
+
+  const query = TextUtils.normalize(searchInput.value || '');
   let resultados = window.fmsGroupsData;
-
-  if (tipoElemento) {
-    resultados = resultados.filter(g => g.elementType === tipoElemento);
-  }
 
   if (damageFilter) {
     resultados = resultados.filter(g =>
@@ -2458,31 +2482,7 @@ function filtrarFMS() {
     );
   }
 
-  container.innerHTML = FMSPanel.renderFMSList(resultados, { limitNotice: false });
-}
-
-/**
- * Buscar elementos FMS por código o zona/nodo
- */
-function buscarFMS() {
-  const searchInput = document.getElementById('fmsSearch');
-  const container = document.getElementById('fmsListContainer');
-
-  if (!window.fmsGroupsData || !container || !searchInput) return;
-
-  const query = TextUtils.normalize(searchInput.value || '');
-  let resultados = window.fmsGroupsData;
-
-  if (query) {
-    resultados = resultados.filter(g => {
-      const code = TextUtils.normalize(g.elementCode || '');
-      const type = TextUtils.normalize(formatFMSTypeLabel(g.elementType || ''));
-      const zonas = TextUtils.normalize(Array.from(g.zonasAfectadas || []).join(' '));
-      return code.includes(query) || type.includes(query) || zonas.includes(query);
-    });
-  } else {
-    resultados = resultados.slice(0, 10);
-  }
+  container.innerHTML = FMSPanel.renderFMSList(filtrados);
 
   container.innerHTML = FMSPanel.renderFMSList(resultados, { limitNotice: !query });
 }
@@ -3025,6 +3025,13 @@ let allCMTS = [];
 let currentZone = null;
 let selectedOrders = new Set();
 window.equiposOpen = new Set();
+
+const fmsRenderState = {
+  needsRender: true,
+  isRendering: false,
+  lastOrders: [],
+  lastFmsMap: new Map()
+};
 
 const fmsRenderState = {
   needsRender: true,
