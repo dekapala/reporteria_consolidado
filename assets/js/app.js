@@ -1098,15 +1098,47 @@ const UIRenderer = {
       const dir = TextUtils.normalize(o['Calle']);
       if (!dir || dir.length < 5) return;
       
+      const zona = o['Zona Tecnica HFC'] || o['Zona Tecnica FTTH'] || '';
+      
       if (!edificios.has(dir)) {
         edificios.set(dir, {
           direccion: o['Calle'],
-          zona: o['Zona Tecnica HFC'] || o['Zona Tecnica FTTH'],
+          zona: zona,
           territorio: o['Territorio de servicio: Nombre'] || '',
-          casos: []
+          casos: [],
+          zonas: new Set()
         });
       }
       edificios.get(dir).casos.push(o);
+      if (zona) edificios.get(dir).zonas.add(zona);
+    });
+    
+    // Agregar información de alarmas a cada edificio
+    edificios.forEach(edificio => {
+      let alarmasTotal = 0;
+      let alarmasActivas = 0;
+      const alarmasDetalle = [];
+      
+      // Buscar alarmas por cada zona del edificio
+      edificio.zonas.forEach(zona => {
+        const alarmas = dataProcessor.fmsMap.get(zona) || [];
+        alarmasTotal += alarmas.length;
+        const activas = alarmas.filter(a => a.isActive);
+        alarmasActivas += activas.length;
+        
+        if (alarmas.length > 0) {
+          alarmasDetalle.push({
+            zona: zona,
+            alarmas: alarmas,
+            activas: activas.length
+          });
+        }
+      });
+      
+      edificio.alarmasTotal = alarmasTotal;
+      edificio.alarmasActivas = alarmasActivas;
+      edificio.alarmasDetalle = alarmasDetalle;
+      edificio.tieneAlarma = alarmasActivas > 0;
     });
     
     const sorted = Array.from(edificios.values())
@@ -1117,15 +1149,25 @@ const UIRenderer = {
     if (!sorted.length) return '<div class="loading-message"><p>No hay edificios con 2+ incidencias</p></div>';
     
     let html = '<div class="table-container"><div class="table-wrapper"><table><thead><tr>';
-    html += '<th>Dirección</th><th>Zona</th><th>Territorio</th><th class="number">Total OTs</th>';
+    html += '<th>Dirección</th><th>Zona</th><th>Territorio</th><th class="number">Total OTs</th><th class="number">Alarmas</th><th>Acciones</th>';
     html += '</tr></thead><tbody>';
     
     sorted.forEach((e, idx) => {
-      html += `<tr class="clickable" onclick="showEdificioDetail(${idx})">
-        <td><strong>${e.direccion}</strong></td>
-        <td>${e.zona}</td>
-        <td>${e.territorio}</td>
-        <td class="number">${e.casos.length}</td>
+      const alarmaClass = e.alarmasActivas > 0 ? 'alarma-activa' : '';
+      const alarmaIcon = e.alarmasActivas > 0 ? '🚨' : (e.alarmasTotal > 0 ? '⚠️' : '✅');
+      const alarmaText = e.alarmasActivas > 0 ? `${e.alarmasActivas} activas` : (e.alarmasTotal > 0 ? `${e.alarmasTotal} hist.` : 'Sin alarmas');
+      
+      html += `<tr class="clickable ${alarmaClass}">
+        <td onclick="showEdificioDetail(${idx})"><strong>${e.direccion}</strong></td>
+        <td onclick="showEdificioDetail(${idx})">${e.zona}</td>
+        <td onclick="showEdificioDetail(${idx})">${e.territorio}</td>
+        <td class="number" onclick="showEdificioDetail(${idx})">${e.casos.length}</td>
+        <td class="number ${alarmaClass}" onclick="showEdificioDetail(${idx})">${alarmaIcon} ${alarmaText}</td>
+        <td>
+          <button class="btn btn-sm btn-info" onclick="event.stopPropagation(); showEdificioAlarmas(${idx})" ${e.alarmasTotal === 0 ? 'disabled' : ''}>
+            🔍 Ver FMS
+          </button>
+        </td>
       </tr>`;
     });
     
@@ -2168,6 +2210,59 @@ function showEdificioDetail(idx) {
 function closeEdificioModal() {
   document.getElementById('edificioBackdrop').classList.remove('show');
   document.body.classList.remove('modal-open');
+}
+
+function showEdificioAlarmas(idx) {
+  const edificio = window.edificiosData[idx];
+  if (!edificio) return;
+  
+  if (!edificio.alarmasDetalle || edificio.alarmasDetalle.length === 0) {
+    toast('No hay alarmas FMS para este edificio');
+    return;
+  }
+  
+  document.getElementById('alarmaModalBody').innerHTML = '';
+  
+  let html = `<div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 8px;">
+    <strong>🏢 Edificio:</strong> ${edificio.direccion}<br>
+    <strong>Zonas:</strong> ${Array.from(edificio.zonas).join(', ')}<br>
+    <strong>Total Alarmas:</strong> ${edificio.alarmasTotal} (${edificio.alarmasActivas} activas)
+  </div>`;
+  
+  edificio.alarmasDetalle.forEach(detalle => {
+    html += `<div style="margin-bottom: 16px;">
+      <h4 style="margin: 0 0 8px 0; color: var(--text-primary);">📍 Zona: ${detalle.zona} (${detalle.activas} activas de ${detalle.alarmas.length})</h4>
+      <div class="table-container"><div class="table-wrapper"><table class="detail-table"><thead><tr>
+        <th>ID</th>
+        <th>Tipo</th>
+        <th>Elemento</th>
+        <th>Daño</th>
+        <th>Descripción</th>
+        <th>Fecha Creación</th>
+        <th>Estado</th>
+      </tr></thead><tbody>`;
+    
+    detalle.alarmas.forEach(alarma => {
+      const estadoClass = alarma.isActive ? 'status-critical' : 'status-ok';
+      const estadoText = alarma.isActive ? '🔴 Activa' : '🟢 Recuperada';
+      
+      html += `<tr>
+        <td>${alarma.eventId || '-'}</td>
+        <td>${alarma.type || alarma.elementType || '-'}</td>
+        <td>${alarma.elementCode || '-'}</td>
+        <td>${alarma.damage || alarma.damageClassification || '-'}</td>
+        <td title="${alarma.description || ''}">${(alarma.description || '-').substring(0, 50)}${(alarma.description || '').length > 50 ? '...' : ''}</td>
+        <td>${alarma.creationDate || '-'}</td>
+        <td class="${estadoClass}">${estadoText}</td>
+      </tr>`;
+    });
+    
+    html += '</tbody></table></div></div></div>';
+  });
+  
+  document.getElementById('alarmaModalBody').innerHTML = html;
+  document.getElementById('alarmaBackdrop').classList.add('show');
+  document.body.classList.add('modal-open');
 }
 
 function openModal(zoneIdx) {
