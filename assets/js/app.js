@@ -3010,6 +3010,12 @@ let allCMTS = [];
 let currentZone = null;
 let selectedOrders = new Set();
 
+const fmsRenderState = {
+  needsRender: true,
+  lastOrders: [],
+  lastFmsMap: new Map()
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
 });
@@ -3236,6 +3242,42 @@ function runFiltersPipeline() {
   return { filtered, analyzed, cmtsFiltered, territoriosAnalisis };
 }
 
+function updateFMSPendingData(orders, fmsMap) {
+  fmsRenderState.lastOrders = Array.isArray(orders) ? orders : [];
+  fmsRenderState.lastFmsMap = fmsMap instanceof Map ? fmsMap : new Map();
+  fmsRenderState.needsRender = true;
+
+  const fmsPanelEl = document.getElementById('fmsPanel');
+  if (fmsPanelEl && !fmsPanelEl.classList.contains('active')) {
+    fmsPanelEl.innerHTML = '<div class="loading-message"><p>ℹ️ El panel FMS se generará al abrir la pestaña.</p></div>';
+  } else {
+    renderFMSPanelIfNeeded();
+  }
+}
+
+function renderFMSPanelIfNeeded(options = {}) {
+  const fmsPanelEl = document.getElementById('fmsPanel');
+  if (!fmsPanelEl) return;
+
+  const isActive = fmsPanelEl.classList.contains('active');
+  const shouldRender = options.force || (isActive && fmsRenderState.needsRender);
+
+  if (!shouldRender) return;
+
+  const fmsMap = fmsRenderState.lastFmsMap || new Map();
+  if (!fmsMap.size) {
+    fmsPanelEl.innerHTML = '<div class="loading-message"><p>⚠️ No hay datos de FMS/Alarmas cargados</p></div>';
+    fmsRenderState.needsRender = false;
+    return;
+  }
+
+  fmsPanelEl.innerHTML = '<div class="loading-message"><p>⏳ Procesando panel FMS...</p></div>';
+  requestAnimationFrame(() => {
+    fmsPanelEl.innerHTML = FMSPanel.render(fmsRenderState.lastOrders || [], fmsMap);
+    fmsRenderState.needsRender = false;
+  });
+}
+
 function applyFilters() {
   if (!currentData) return;
 
@@ -3292,11 +3334,8 @@ function applyFilters() {
   document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
   document.getElementById('edificiosPanel').innerHTML = UIRenderer.renderEdificios(filtered);
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
-  const fmsPanelEl = document.getElementById('fmsPanel');
-  if (fmsPanelEl) {
-    const fmsMap = dataProcessor ? dataProcessor.fmsMap : new Map();
-    fmsPanelEl.innerHTML = FMSPanel.render(filtered, fmsMap);
-  }
+  const fmsMap = dataProcessor ? dataProcessor.fmsMap : new Map();
+  updateFMSPendingData(filtered, fmsMap);
 }
 
 function resetFiltersState() {
@@ -3475,9 +3514,13 @@ function filtrarPorTerritorio(territorioNormalizado) {
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
-  
+
   document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
   document.getElementById(`${tabName}Panel`).classList.add('active');
+
+  if (tabName === 'fms') {
+    renderFMSPanelIfNeeded({ force: true });
+  }
 }
 
 function showAlarmaInfo(zoneIdx) {
