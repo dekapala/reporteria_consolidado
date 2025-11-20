@@ -1,3 +1,10 @@
+// ---- SheetJS compat para ES modules ----
+const XLSX = window.XLSX ?? null;
+if (!XLSX) {
+  console.error('❌ XLSX no está disponible. Verifica el <script> del CDN antes de app.js');
+  alert('No se encontró la librería XLSX. Revisá el orden de los <script>.');
+}
+
 console.log('🚀 Panel v5.0 COMPLETO - Territorios Críticos + Filtros Equipos + Stats Clickeables');
 
 function debounce(func, wait) {
@@ -731,12 +738,50 @@ class DataProcessor {
     this.nodosMap = new Map();
     this.fmsMap = new Map();
     this.allColumns = new Set();
+    this.fallbackIdCounter = 1;
+  }
+
+  getOrderId(row) {
+    if (!row) return '';
+
+    const preferredKeys = [
+      'Número de cita',
+      'Numero de cita',
+      'N° de cita',
+      'Número de caso',
+      'Numero de caso',
+      'N° de caso',
+      'Número de cuenta',
+      'Numero de cuenta',
+      'Cuenta'
+    ];
+
+    for (const key of preferredKeys) {
+      const val = row[key];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        return String(val).trim();
+      }
+    }
+
+    const dynamicKey = Object.keys(row).find(k => {
+      const normalized = stripAccents(k).toLowerCase();
+      return normalized.includes('numero') && (normalized.includes('cita') || normalized.includes('caso') || normalized.includes('cuenta'));
+    });
+
+    if (dynamicKey) {
+      const val = row[dynamicKey];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        return String(val).trim();
+      }
+    }
+
+    return '';
   }
   
   async loadExcel(file, tipo) {
     try {
       const data = new Uint8Array(await file.arrayBuffer());
-      
+
       const wb = XLSX.read(data, {
         type: 'array',
         cellDates: false,
@@ -744,8 +789,19 @@ class DataProcessor {
         cellFormula: false,
         raw: false
       });
-      
+
+      if (!wb || !wb.SheetNames || !wb.SheetNames.length) {
+        return {success:false, error:'Libro sin hojas'};
+      }
       const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws || !ws['!ref']) {
+        // intento recuperar rango inferido
+        const rangeGuess = XLSX.utils.decode_range(XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:9999,c:99}}));
+        ws['!ref'] = ws['!ref'] || XLSX.utils.encode_range(rangeGuess);
+      }
+      if (!ws['!ref']) {
+        return {success:false, error:'Hoja sin rango (!ref) detectable'};
+      }
       const range = XLSX.utils.decode_range(ws['!ref']);
       
       let headerRow = 0;
@@ -928,38 +984,43 @@ class DataProcessor {
     if (!this.consolidado1 && !this.consolidado2) return [];
     if (!this.consolidado1) return this.consolidado2 || [];
     if (!this.consolidado2) return this.consolidado1 || [];
-    
+
     const map = new Map();
-    
-    this.consolidado1.forEach(r => {
-      const cita = r['Número de cita'];
-      if (cita) {
-        if (!map.has(cita)) {
-          map.set(cita, { ...r, _merged: false });
-        }
+    let missingIdCount = 0;
+
+    const ensureId = (value, prefix, idx) => {
+      const id = value && String(value).trim();
+      if (id) return id;
+      missingIdCount++;
+      return `${prefix}${idx + 1}`;
+    };
+
+    this.consolidado1.forEach((r, idx) => {
+      const cita = ensureId(this.getOrderId(r), 'c1-', idx);
+      if (!map.has(cita)) {
+        map.set(cita, { ...r, _merged: false });
       }
     });
-    
-    this.consolidado2.forEach(r => {
-      const cita = r['Número de cita'];
-      if (cita) {
-        if (map.has(cita)) {
-          const existing = map.get(cita);
-          Object.keys(r).forEach(key => {
-            if (!existing[key] || existing[key] === '') {
-              existing[key] = r[key];
-            }
-          });
-          existing._merged = true;
-        } else {
-          map.set(cita, { ...r, _merged: false });
-        }
+
+    this.consolidado2.forEach((r, idx) => {
+      const cita = ensureId(this.getOrderId(r), 'c2-', idx);
+      if (map.has(cita)) {
+        const existing = map.get(cita);
+        Object.keys(r).forEach(key => {
+          if (!existing[key] || existing[key] === '') {
+            existing[key] = r[key];
+          }
+        });
+        existing._merged = true;
+      } else {
+        map.set(cita, { ...r, _merged: false });
       }
     });
-    
+
     const result = Array.from(map.values());
-    console.log(`✅ Total órdenes únicas (deduplicadas): ${result.length}`);
-    
+    const suffix = missingIdCount > 0 ? ` (asignados ${missingIdCount} IDs faltantes)` : '';
+    console.log(`✅ Total órdenes únicas (deduplicadas): ${result.length}${suffix}`);
+
     return result;
   }
   
