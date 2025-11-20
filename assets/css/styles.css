@@ -1050,6 +1050,41 @@ body.modal-open { overflow: hidden; }
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--spacing-md);
 }
+/* Alarmas en edificios */
+.alarma-activa {
+  background-color: rgba(209, 52, 56, 0.1);
+}
+
+.status-critical {
+  color: #D13438;
+  font-weight: 600;
+}
+
+.status-ok {
+  color: #107C10;
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+
+.btn-info {
+  background-color: #0078D4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-info:hover {
+  background-color: #106EBE;
+}
+
+.btn-info:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
 
 /* Ajustes de compatibilidad Bootstrap 4.6 para el panel FMS */
 .fms-panel .card { border-radius: 0.5rem; }
