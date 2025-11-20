@@ -3002,38 +3002,51 @@ function buildOrderExportRow(order, zoneInfo){
   };
 }
 
+/* =================== EXPORT: helpers y builders =================== */
 function buildZoneExportRows(zoneData){
   if (!zoneData) return [];
   const source = zoneData.ordenesOriginales || zoneData.ordenes || [];
   return source
-    .map(order => buildOrderExportRow(order, zoneData))
-    .filter(row => row && ZONE_EXPORT_HEADERS.some(header => (row[header] || '').toString().trim().length));
+    .map(order => buildOrderExportRow(order, zoneData)) // se asume definida globalmente
+    // Evita dependencia de ZONE_EXPORT_HEADERS para el filtro: valida que haya al menos un valor no vacío
+    .filter(row => {
+      if (!row || typeof row !== 'object') return false;
+      return Object.values(row).some(v => String(v ?? '').trim().length > 0);
+    });
 }
 
 function createWorksheetFromRows(rows, headers){
   if (!rows || !rows.length) return null;
-  const data = rows.map(row => headers.map(header => row[header] || ''));
-  return XLSX.utils.aoa_to_sheet([headers, ...data]);
+  // Si no hay headers definidos, los infiere del primer row
+  const finalHeaders = (Array.isArray(headers) && headers.length)
+    ? headers
+    : Object.keys(rows[0]);
+  const data = rows.map(row => finalHeaders.map(h => (row[h] ?? '')));
+  return XLSX.utils.aoa_to_sheet([finalHeaders, ...data]);
 }
 
 function sanitizeSheetName(name){
   const fallback = 'Hoja';
   if (!name) return fallback;
-  const invalidChars = /[\/?*:[\]]/g;
-  const cleaned = name.toString().replace(invalidChars, ' ').replace(/[\u0000-\u001f]/g, ' ').trim();
+  // Remueve caracteres inválidos para nombres de hoja
+  const invalidChars = /[\/\?\*\:\[\]]/g; // escapadas correctas dentro del charclass
+  const cleaned = name.toString()
+    .replace(invalidChars, ' ')
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .trim();
   const truncated = cleaned.substring(0, 31);
   return truncated || fallback;
 }
 
 function appendSheet(workbook, worksheet, desiredName, usedNames){
-  if (!worksheet) return false;
+  if (!worksheet || !workbook) return false;
   const base = sanitizeSheetName(desiredName);
-  let name = base;
+  let name = base || 'Hoja';
   let counter = 1;
   while (usedNames.has(name)){
     counter += 1;
     const suffix = `_${counter}`;
-    const baseTrim = base.substring(0, Math.max(31 - suffix.length, 1));
+    const baseTrim = (base || 'Hoja').substring(0, Math.max(31 - suffix.length, 1));
     name = `${baseTrim}${suffix}`;
   }
   usedNames.add(name);
@@ -3041,52 +3054,66 @@ function appendSheet(workbook, worksheet, desiredName, usedNames){
   return true;
 }
 
+/* =================== EXPORT: acciones =================== */
 function exportEquiposGrupoExcel(zona, useFiltered = false){
-  const source = useFiltered && window.equiposPorZona ? window.equiposPorZona : window.equiposPorZonaCompleto;
-  
-  if (!source) return toast('No hay datos de equipos');
-  
-  const arr = source.get(zona) || [];
-  if (!arr.length) return toast('No hay equipos en esa zona');
-  
+  const source = (useFiltered && window.equiposPorZona)
+    ? window.equiposPorZona
+    : window.equiposPorZonaCompleto;
+
+  if (!source) return toast && toast('No hay datos de equipos');
+
+  const arr = source.get ? (source.get(zona) || []) : [];
+  if (!arr.length) return toast && toast('No hay equipos en esa zona');
+
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(arr);
-  XLSX.utils.book_append_sheet(wb, ws, `Equipos_${zona || 'NA'}`);
-  
-  const filterInfo = useFiltered && (Filters.equipoModelo.length > 0 || Filters.equipoMarca || Filters.equipoTerritorio)
-    ? `_filtrado`
-    : '';
-  
-  XLSX.writeFile(wb, `Equipos_${zona || 'NA'}${filterInfo}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  toast(`✅ Exportados ${arr.length} equipos de ${zona}`);
+  XLSX.utils.book_append_sheet(wb, ws, `Equipos_${(zona || 'NA').toString().slice(0, 25)}`);
+
+  const FiltersSafe = (typeof Filters === 'object' && Filters) ? Filters : {};
+  const filterInfo = (useFiltered && (
+      (Array.isArray(FiltersSafe.equipoModelo) && FiltersSafe.equipoModelo.length > 0) ||
+      FiltersSafe.equipoMarca ||
+      FiltersSafe.equipoTerritorio
+    )) ? `_filtrado` : '';
+
+  XLSX.writeFile(
+    wb,
+    `Equipos_${zona || 'NA'}${filterInfo}_${new Date().toISOString().slice(0, 10)}.xlsx`
+  );
+  toast && toast(`✅ Exportados ${arr.length} equipos de ${zona}`);
 }
 
 function exportZonaExcel(zoneIdx) {
   const zonaData = window.currentAnalyzedZones?.[zoneIdx];
-  if (!zonaData) return toast('No hay datos de la zona');
+  if (!zonaData) return toast && toast('No hay datos de la zona');
 
   const rows = buildZoneExportRows(zonaData);
   if (!rows.length) {
-    toast('No hay órdenes para exportar en esta zona');
-    return;
+    return toast && toast('No hay órdenes para exportar en esta zona');
   }
 
   const wb = XLSX.utils.book_new();
   const usedNames = new Set();
-  const sheet = createWorksheetFromRows(rows, ZONE_EXPORT_HEADERS);
+
+  // Usa ZONE_EXPORT_HEADERS si existe; si no, createWorksheetFromRows infiere headers
+  const headers = (typeof ZONE_EXPORT_HEADERS !== 'undefined' && Array.isArray(ZONE_EXPORT_HEADERS) && ZONE_EXPORT_HEADERS.length)
+    ? ZONE_EXPORT_HEADERS
+    : undefined;
+
+  const sheet = createWorksheetFromRows(rows, headers);
   appendSheet(wb, sheet, `Zona_${zonaData.zona}`, usedNames);
 
   const fecha = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `Zona_${zonaData.zona}_${fecha}.xlsx`);
-  toast(`✅ Exportada zona ${zonaData.zona} (${rows.length} órdenes)`);
+  toast && toast(`✅ Exportada zona ${zonaData.zona} (${rows.length} órdenes)`);
 }
 
 function exportCMTSExcel(cmts) {
   const cmtsData = (window.currentCMTSData || []).find(c => c.cmts === cmts);
-  if (!cmtsData) return toast('No hay datos del CMTS');
-  
+  if (!cmtsData) return toast && toast('No hay datos del CMTS');
+
   const wb = XLSX.utils.book_new();
-  const zonasFlat = cmtsData.zonas.map(z => ({
+  const zonasFlat = (cmtsData.zonas || []).map(z => ({
     Zona: z.zona,
     Tipo: z.tipo,
     Total_OTs: z.totalOTs,
@@ -3094,14 +3121,15 @@ function exportCMTSExcel(cmts) {
     Ingreso_N1: z.ingresoN1,
     Estado_Nodo: z.nodoEstado
   }));
-  
+
   const ws = XLSX.utils.json_to_sheet(zonasFlat);
-  XLSX.utils.book_append_sheet(wb, ws, `CMTS_${cmts.slice(0, 20)}`);
-  
-  XLSX.writeFile(wb, `CMTS_${cmts.slice(0, 20)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  toast(`✅ Exportado CMTS ${cmts}`);
+  XLSX.utils.book_append_sheet(wb, ws, `CMTS_${String(cmts).slice(0, 20)}`);
+
+  XLSX.writeFile(wb, `CMTS_${String(cmts).slice(0, 20)}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  toast && toast(`✅ Exportado CMTS ${cmts}`);
 }
 
+/* =================== STATE GLOBAL =================== */
 let currentData = null;
 let allZones = [];
 let allCMTS = [];
@@ -3109,6 +3137,7 @@ let currentZone = null;
 let selectedOrders = new Set();
 window.equiposOpen = new Set();
 
+// (¡Corregido!) Definición ÚNICA de fmsRenderState
 const fmsRenderState = {
   needsRender: true,
   isRendering: false,
@@ -3116,102 +3145,113 @@ const fmsRenderState = {
   lastFmsMap: new Map()
 };
 
-const fmsRenderState = {
-  needsRender: true,
-  isRendering: false,
-  lastOrders: [],
-  lastFmsMap: new Map()
-};
-
+/* =================== INIT & LISTENERS =================== */
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
 });
 
 function setupEventListeners() {
-  document.getElementById('fileConsolidado1').addEventListener('change', e => loadFile(e, 1));
-  document.getElementById('fileConsolidado2').addEventListener('change', e => loadFile(e, 2));
-  document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
-  document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
-  
+  const el1 = document.getElementById('fileConsolidado1');
+  const el2 = document.getElementById('fileConsolidado2');
+  const el3 = document.getElementById('fileNodos');
+  const el4 = document.getElementById('fileFMS');
+
+  el1 && el1.addEventListener('change', e => loadFile(e, 1));
+  el2 && el2.addEventListener('change', e => loadFile(e, 2));
+  el3 && el3.addEventListener('change', e => loadFile(e, 3));
+  el4 && el4.addEventListener('change', e => loadFile(e, 4));
+
   const filterCatec = document.getElementById('filterCATEC');
   const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
 
   if (filterCatec && filterExcludeCatec) {
     filterCatec.addEventListener('change', e => {
-      if (e.target.checked) {
-        filterExcludeCatec.checked = false;
-      }
-      applyFilters();
+      if (e.target.checked) filterExcludeCatec.checked = false;
+      applyFilters && applyFilters();
     });
 
     filterExcludeCatec.addEventListener('change', e => {
-      if (e.target.checked) {
-        filterCatec.checked = false;
-      }
-      applyFilters();
+      if (e.target.checked) filterCatec.checked = false;
+      applyFilters && applyFilters();
     });
   }
-  document.getElementById('showAllStates').addEventListener('change', applyFilters);
-  document.getElementById('filterFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
-    applyFilters();
-  });
-  document.getElementById('filterExcludeFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterFTTH').checked = false;
-    applyFilters();
-  });
-  document.getElementById('filterNodoEstado').addEventListener('change', applyFilters);
-  document.getElementById('filterCMTS').addEventListener('change', applyFilters);
-  document.getElementById('daysWindow').addEventListener('change', applyFilters);
-  document.getElementById('filterTerritorio').addEventListener('change', applyFilters);
-  document.getElementById('filterSistema').addEventListener('change', applyFilters);
-  document.getElementById('filterAlarma').addEventListener('change', applyFilters);
-  document.getElementById('quickSearch').addEventListener('input', debounce(applyFilters, 300));
-  document.getElementById('ordenarPorIngreso').addEventListener('change', applyFilters);
 
-  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
-  if (zoneFilterSearch) {
-    zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
+  const showAllStates = document.getElementById('showAllStates');
+  showAllStates && showAllStates.addEventListener('change', () => applyFilters && applyFilters());
+
+  const filterFTTH = document.getElementById('filterFTTH');
+  const filterExcludeFTTH = document.getElementById('filterExcludeFTTH');
+  filterFTTH && filterFTTH.addEventListener('change', e => {
+    if (e.target.checked && filterExcludeFTTH) filterExcludeFTTH.checked = false;
+    applyFilters && applyFilters();
+  });
+  filterExcludeFTTH && filterExcludeFTTH.addEventListener('change', e => {
+    if (e.target.checked && filterFTTH) filterFTTH.checked = false;
+    applyFilters && applyFilters();
+  });
+
+  const binding = [
+    'filterNodoEstado','filterCMTS','daysWindow','filterTerritorio',
+    'filterSistema','filterAlarma','ordenarPorIngreso'
+  ];
+  binding.forEach(id => {
+    const el = document.getElementById(id);
+    el && el.addEventListener('change', () => applyFilters && applyFilters());
+  });
+
+  const quickSearch = document.getElementById('quickSearch');
+  if (quickSearch) {
+    const deb = (typeof debounce === 'function') ? debounce : (fn => fn);
+    quickSearch.addEventListener('input', deb(() => applyFilters && applyFilters(), 300));
   }
+
+  // Multiselect de zonas
+  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
+  zoneFilterSearch && zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
 
   const zoneFilterOptions = document.getElementById('zoneFilterOptions');
-  if (zoneFilterOptions) {
-    zoneFilterOptions.addEventListener('change', onZoneOptionChange);
-  }
+  zoneFilterOptions && zoneFilterOptions.addEventListener('change', onZoneOptionChange);
 
   document.addEventListener('click', handleZoneFilterOutsideClick);
 }
 
+/* =================== LOAD FILES =================== */
 async function loadFile(e, tipo) {
-  const file = e.target.files[0];
+  const file = e.target.files && e.target.files[0];
   if (!file) return;
-  
+
   const statusEl = document.getElementById(`status${tipo}`);
-  statusEl.textContent = 'Cargando...';
-  statusEl.classList.remove('loaded');
-  
-  let result;
-  
-  if (tipo === 4 && file.name.endsWith('.csv')) {
-    result = await dataProcessor.loadCSV(file);
-  } else {
-    result = await dataProcessor.loadExcel(file, tipo);
+  if (statusEl) {
+    statusEl.textContent = 'Cargando...';
+    statusEl.classList.remove('loaded');
   }
-  
+
+  let result = { success: false, rows: 0, error: 'Sin procesar' };
+  try {
+    if (tipo === 4 && /\.csv$/i.test(file.name)) {
+      result = await dataProcessor.loadCSV(file);
+    } else {
+      result = await dataProcessor.loadExcel(file, tipo);
+    }
+  } catch (err) {
+    result = { success: false, rows: 0, error: (err && err.message) || String(err) };
+  }
+
   if (result.success) {
-    statusEl.textContent = `✓ ${result.rows} filas cargadas`;
-    statusEl.classList.add('loaded');
-    
+    statusEl && (statusEl.textContent = `✓ ${result.rows} filas cargadas`, statusEl.classList.add('loaded'));
     const nombres = ['Consolidado 1', 'Consolidado 2', 'Nodos UP/DOWN', 'Alarmas FMS'];
-    toast(`${nombres[tipo - 1]} cargado: ${result.rows} registros`);
-    
-    if ((dataProcessor.consolidado1 || dataProcessor.consolidado2)) {
-      document.getElementById('mergeStatus').style.display = 'flex';
-      processData();
+    toast && toast(`${nombres[tipo - 1]} cargado: ${result.rows} registros`);
+
+    // Si al menos uno de los consolidado está, procesamos para habilitar vistas
+    if (dataProcessor.consolidado1 || dataProcessor.consolidado2) {
+      const ms = document.getElementById('mergeStatus');
+      ms && (ms.style.display = 'flex', (document.getElementById('mergeStatusText') || {}).textContent = 'Procesando...');
+      // processData debe existir globalmente
+      typeof processData === 'function' && processData();
     }
   } else {
-    statusEl.textContent = `✗ Error`;
-    toast(`Error al cargar archivo: ${result.error}`);
+    statusEl && (statusEl.textContent = `✗ Error`);
+    toast && toast(`Error al cargar archivo: ${result.error}`);
   }
 }
 
