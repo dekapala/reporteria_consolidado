@@ -794,14 +794,29 @@ class DataProcessor {
         return {success:false, error:'Libro sin hojas'};
       }
       const ws = wb.Sheets[wb.SheetNames[0]];
-      if (!ws || !ws['!ref']) {
-        // intento recuperar rango inferido
-        const rangeGuess = XLSX.utils.decode_range(XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:9999,c:99}}));
-        ws['!ref'] = ws['!ref'] || XLSX.utils.encode_range(rangeGuess);
+      if (!ws) {
+        return {success:false, error:'Hoja vacía o no encontrada'};
       }
+      
+      // Si no tiene rango definido, intentar inferirlo
       if (!ws['!ref']) {
-        return {success:false, error:'Hoja sin rango (!ref) detectable'};
+        // Buscar el rango real escaneando celdas
+        let maxR = 0, maxC = 0;
+        for (const key in ws) {
+          if (key[0] !== '!') {
+            const cell = XLSX.utils.decode_cell(key);
+            if (cell.r > maxR) maxR = cell.r;
+            if (cell.c > maxC) maxC = cell.c;
+          }
+        }
+        if (maxR > 0 || maxC > 0) {
+          ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:maxR,c:maxC}});
+          console.log(`⚠️ Rango inferido: ${ws['!ref']}`);
+        } else {
+          return {success:false, error:'Hoja sin datos detectables'};
+        }
       }
+      
       const range = XLSX.utils.decode_range(ws['!ref']);
       
       let headerRow = 0;
