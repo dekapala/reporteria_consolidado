@@ -1260,7 +1260,6 @@ class DataProcessor {
   }
 }
 
-const dataProcessor = new DataProcessor();
 
 function escapeHtml(str = '') {
   return String(str)
