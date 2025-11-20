@@ -1,4 +1,39 @@
+// ---- SheetJS compat para ES modules ----
+const XLSX = window.XLSX ?? null;
+if (!XLSX) {
+  console.error('❌ XLSX no está disponible. Verifica el <script> del CDN antes de app.js');
+  alert('No se encontró la librería XLSX. Revisá el orden de los <script>.');
+}
+
 console.log('🚀 Panel v5.0 COMPLETO - Territorios Críticos + Filtros Equipos + Stats Clickeables');
+
+function ensureDataProcessorAvailable() {
+  if (!window.dataProcessor) {
+    console.error('❌ data-processor.js no se inicializó. Verifica el orden de los <script>.');
+    alert('No se pudo inicializar el cargador de archivos. Revisa que data-processor.js se cargue antes que app.js');
+    return false;
+  }
+
+  if (!XLSX) {
+    console.error('❌ XLSX no disponible en ensureDataProcessorAvailable');
+    alert('No se encontró XLSX. Revisa el CDN.');
+    return false;
+  }
+
+  return true;
+}
+
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
 
 const CONFIG = {
   codigo_befan: 'FR461',
@@ -77,6 +112,23 @@ function findDispositivosColumn(rowObj){
        : null;
 }
 
+function normalizeDeviceRecord(raw = {}) {
+  const device = {
+    macAddress: String(raw.macAddress || raw.mac || '').trim(),
+    serialNumber: String(raw.serialNumber || raw.serial || '').trim(),
+    model: String(raw.model || raw.modelo || '').trim(),
+    category: String(raw.category || raw.categoria || '').trim(),
+    description: String(raw.description || raw.descripcion || '').trim(),
+    type: String(raw.type || raw.tipo || '').trim()
+  };
+
+  if (!device.macAddress && !device.serialNumber && !device.model && !device.category && !device.description && !device.type) {
+    return null;
+  }
+
+  return device;
+}
+
 const DateUtils = {
   parse(str) {
     if (!str) return null;
@@ -127,7 +179,7 @@ const TextUtils = {
       .trim();
   },
 
-    
+
   matches(text, query) {
     return this.normalize(text).includes(this.normalize(query));
   },
@@ -136,60 +188,50 @@ const TextUtils = {
     return queries.some(q => normalized.includes(this.normalize(q)));
   },
   parseDispositivosJSON(jsonStr) {
+    const normalized = [];
+    const pushDevice = (raw) => {
+      const device = normalizeDeviceRecord(raw || {});
+      if (device) normalized.push(device);
+    };
+
     try {
       if (!jsonStr) return [];
-      
+
       const str = String(jsonStr).trim();
       if (!str) return [];
-      
-      // MÉTODO 1: Intentar parsear JSON completo
+
       try {
         const parsed = JSON.parse(str);
         const arr = parsed?.openResp || parsed?.open_response || parsed?.data || [];
         if (Array.isArray(arr) && arr.length > 0) {
-          return arr.map(d => ({
-            category: d.category || '',
-            description: d.description || '',
-            model: d.model || '',
-            serialNumber: d.serialNumber || d.serial || '',
-            macAddress: d.macAddress || d.mac || '',
-            type: d.type || ''
-          }));
+          arr.forEach(pushDevice);
+          return normalized;
         }
       } catch (e) {
-        // JSON truncado o inválido, continuar con método alternativo
         console.log('JSON truncado, usando extracción por regex');
       }
-      
-      // MÉTODO 2: Extracción por expresiones regulares (para JSON truncado a 255 chars)
+
       const get = (field) => {
-        // Buscar "field":"value"
         const re = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 'i');
         const match = str.match(re);
         return match ? match[1] : '';
       };
-      
-      // Verificar si tiene algún campo relevante
+
       if (/category|model|macAddress|serialNumber|type|description/i.test(str)) {
-        const dispositivo = {
+        pushDevice({
           category: get('category'),
           description: get('description'),
           model: get('model'),
           serialNumber: get('serialNumber'),
           macAddress: get('macAddress'),
           type: get('type')
-        };
-        
-        // Solo retornar si al menos tiene model, mac o type
-        if (dispositivo.model || dispositivo.macAddress || dispositivo.type) {
-          return [dispositivo];
-        }
+        });
       }
-      
+
     } catch (err) {
       console.warn('Error parseando dispositivos:', err.message);
     }
-    return [];
+    return normalized;
   },
   detectarSistema(numCaso) {
     const numStr = String(numCaso || '').trim();
@@ -710,469 +752,11 @@ function openUsefulLinks() {
   win.document.close();
 }
 
-class DataProcessor {
-  constructor() {
-    this.consolidado1 = null;
-    this.consolidado2 = null;
-    this.nodosData = null;
-    this.fmsData = null;
-    this.nodosMap = new Map();
-    this.fmsMap = new Map();
-    this.allColumns = new Set();
-  }
-  
-  async loadExcel(file, tipo) {
-    try {
-      const data = new Uint8Array(await file.arrayBuffer());
-      
-      const wb = XLSX.read(data, {
-        type: 'array',
-        cellDates: false,
-        cellText: false,
-        cellFormula: false,
-        raw: false
-      });
-      
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const range = XLSX.utils.decode_range(ws['!ref']);
-      
-      let headerRow = 0;
-      for (let R = 0; R <= 20; R++) {
-        let hasContent = false;
-        for (let C = 0; C <= 15; C++) {
-          const cellAddr = XLSX.utils.encode_cell({r: R, c: C});
-          const cell = ws[cellAddr];
-          if (cell && cell.v) {
-            const cellValue = String(cell.v).toLowerCase();
-            if (cellValue.includes('zona') && cellValue.includes('tecnica')) {
-              headerRow = R;
-              console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
-              hasContent = true;
-              break;
-            }
-            if (cellValue.includes('numero') && (cellValue.includes('caso') || cellValue.includes('cuenta'))) {
-              headerRow = R;
-              console.log(`✅ Headers detectados en fila ${R + 1} (columna ${C}): "${cell.v}"`);
-              hasContent = true;
-              break;
-            }
-          }
-        }
-        if (hasContent) break;
-      }
-      
-      console.log(`📋 Usando fila ${headerRow + 1} como headers`);
-      
-      range.s.r = headerRow;
-      ws['!ref'] = XLSX.utils.encode_range(range);
-      
-      const jsonData = XLSX.utils.sheet_to_json(ws, { 
-        defval: '', 
-        raw: false, 
-        dateNF: 'dd/mm/yyyy' 
-      });
-      
-      console.log(`✅ Archivo tipo ${tipo}: ${jsonData.length} registros`);
-      
-      if (tipo === 1) this.consolidado1 = jsonData;
-      else if (tipo === 2) this.consolidado2 = jsonData;
-      else if (tipo === 3) {
-        this.nodosData = jsonData;
-        this.processNodos();
-      } else if (tipo === 4) {
-        this.fmsData = jsonData;
-        this.processFMS();
-      }
-      
-      if (jsonData.length > 0) {
-        Object.keys(jsonData[0]).forEach(col => this.allColumns.add(col));
-      }
-      
-      return {success: true, rows: jsonData.length};
-    } catch (e) {
-      console.error('Error loading Excel:', e);
-      return {success: false, error: e.message};
-    }
-  }
-  
-  async loadCSV(file) {
-    try {
-      const text = await file.text();
-      const lines = text.split('\n').filter(l => l.trim());
-      
-      if (lines.length < 2) {
-        return {success: false, error: 'CSV vacío'};
-      }
-      
-      const parseCSVLine = (line) => {
-        const result = [];
-        let current = '';
-        let inQuotes = false;
-        
-        for (let i = 0; i < line.length; i++) {
-          const char = line[i];
-          
-          if (char === '"') {
-            inQuotes = !inQuotes;
-          } else if (char === ',' && !inQuotes) {
-            result.push(current.trim());
-            current = '';
-          } else {
-            current += char;
-          }
-        }
-        result.push(current.trim());
-        return result;
-      };
-      
-      const headers = parseCSVLine(lines[0]);
-      const rows = [];
-      
-      for (let i = 1; i < lines.length; i++) {
-        const values = parseCSVLine(lines[i]);
-        const obj = {};
-        headers.forEach((h, idx) => {
-          obj[h] = values[idx] || '';
-        });
-        rows.push(obj);
-      }
-      
-      console.log(`✅ CSV Alarmas: ${rows.length} alarmas leídas`);
-      this.fmsData = rows;
-      this.processFMS();
-      
-      return {success: true, rows: rows.length};
-    } catch (e) {
-      console.error('Error loading CSV:', e);
-      return {success: false, error: e.message};
-    }
-  }
-  
-  processNodos() {
-    if (!this.nodosData) return;
-    
-    this.nodosData.forEach(n => {
-      const nodo = String(n['Nodo'] || '').trim();
-      if (!nodo || nodo === '-' || nodo.includes('SIN_NODO')) return;
-      
-      const up = parseFloat(n['Up']) || 0;
-      const down = parseFloat(n['Down']) || 0;
-      const cmts = String(n['CMTS'] || '').trim();
-      
-      let estado = 'up';
-      if (down > 50) estado = 'critical';
-      else if (down > 0) estado = 'down';
-      
-      this.nodosMap.set(nodo, {
-        cmts,
-        up,
-        down,
-        estado,
-        total: up + down
-      });
-    });
-    
-    console.log(`✅ Procesados ${this.nodosMap.size} nodos`);
-  }
-  
-  processFMS() {
-    if (!this.fmsData) return;
-    
-    console.log('Procesando alarmas FMS...');
-    
-    this.fmsData.forEach(f => {
-      const zonaTecnica = String(f['networkElement.technicalZone'] || '').trim();
-      if (!zonaTecnica) return;
-      
-      const alarma = {
-        eventId: f['eventId'] || '',
-        type: f['type'] || '',
-        creationDate: f['creationDate'] || '',
-        recoveryDate: f['recoveryDate'] || '',
-        elementType: f['networkElement.type'] || '',
-        elementCode: f['networkElement.code'] || '',
-        damage: f['damage'] || '',
-        incidentClassification: f['incidentClassification'] || '',
-        damageClassification: f['damageClassification'] || '',
-        claims: f['claims'] || '',
-        childCount: f['networkElement.childCount'] || '',
-        cmCount: f['networkElement.cmCount'] || '',
-        taskName: f['task.name'] || f['taskName'] || f['workTaskName'] || f['task'] || '',
-        taskType: f['task.type'] || f['taskType'] || '',
-        description: f['description'] || f['alarmDescription'] || '',
-        isActive: !f['recoveryDate'] || f['recoveryDate'] === ''
-      };
-      
-      if (!this.fmsMap.has(zonaTecnica)) {
-        this.fmsMap.set(zonaTecnica, []);
-      }
-      this.fmsMap.get(zonaTecnica).push(alarma);
-    });
-    
-    console.log(`✅ Procesadas alarmas para ${this.fmsMap.size} zonas técnicas`);
-  }
-  
-  merge() {
-    if (!this.consolidado1 && !this.consolidado2) return [];
-    if (!this.consolidado1) return this.consolidado2 || [];
-    if (!this.consolidado2) return this.consolidado1 || [];
-    
-    const map = new Map();
-    
-    this.consolidado1.forEach(r => {
-      const cita = r['Número de cita'];
-      if (cita) {
-        if (!map.has(cita)) {
-          map.set(cita, { ...r, _merged: false });
-        }
-      }
-    });
-    
-    this.consolidado2.forEach(r => {
-      const cita = r['Número de cita'];
-      if (cita) {
-        if (map.has(cita)) {
-          const existing = map.get(cita);
-          Object.keys(r).forEach(key => {
-            if (!existing[key] || existing[key] === '') {
-              existing[key] = r[key];
-            }
-          });
-          existing._merged = true;
-        } else {
-          map.set(cita, { ...r, _merged: false });
-        }
-      }
-    });
-    
-    const result = Array.from(map.values());
-    console.log(`✅ Total órdenes únicas (deduplicadas): ${result.length}`);
-    
-    return result;
-  }
-  
-  processZones(rows) {
-    const zoneGroups = new Map();
-    
-    rows.forEach(r => {
-      const {zonaPrincipal, tipo} = this.getZonaPrincipal(r);
-      if (!zonaPrincipal) return;
-      
-      if (!zoneGroups.has(zonaPrincipal)) {
-        zoneGroups.set(zonaPrincipal, {
-          zona: zonaPrincipal,
-          tipo: tipo,
-          zonaHFC: r['Zona Tecnica HFC'] || r['Zona Tecnica'] || '',
-          zonaFTTH: r['Zona Tecnica FTTH'] || '',
-          territorio: r['Territorio de servicio: Nombre'] || r['Territorio'] || '',
-          ordenes: []
-        });
-      }
-      
-      zoneGroups.get(zonaPrincipal).ordenes.push(r);
-    });
-    
-    return Array.from(zoneGroups.values());
-  }
-  
-  getZonaPrincipal(orden) {
-    const hfc = orden['Zona Tecnica HFC'] || orden['Zona Tecnica'] || '';
-    const ftth = orden['Zona Tecnica FTTH'] || '';
-    
-    const esFTTH = /9\d{2}/.test(hfc);
-    
-    if (esFTTH && ftth) {
-      return {zonaPrincipal: ftth, tipo: 'FTTH'};
-    }
-    
-    return {zonaPrincipal: hfc || ftth, tipo: 'HFC'};
-  }
-  
-  analyzeZones(zones, daysWindow) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    console.log(`✅ Analizando zonas con ventana de ${daysWindow} días`);
-
-    return zones.map(z => {
-      const seenOTperDay = new Map();
-      const ordenesPerDay = new Map();
-      let ordenesEnVentana = 0;
-
-      const diagnosticos = new Set();
-
-      z.ordenes.forEach(o => {
-        const fecha = o['Fecha de creación'] || o['Fecha/Hora de apertura'] || o['Fecha de inicio'];
-        const dt = DateUtils.parse(fecha);
-        if (!dt) return;
-
-        const daysAgo = DateUtils.daysBetween(today, dt);
-
-        if (daysAgo <= daysWindow) {
-          ordenesEnVentana++;
-
-          const dk = DateUtils.toDayKey(dt);
-          if (!seenOTperDay.has(dk)) seenOTperDay.set(dk, new Set());
-          if (!ordenesPerDay.has(dk)) ordenesPerDay.set(dk, []);
-
-          const cita = o['Número de cita'];
-          if (cita) {
-            seenOTperDay.get(dk).add(cita);
-            ordenesPerDay.get(dk).push(o);
-          }
-
-          const diag = o['Diagnostico Tecnico'] || o['Diagnóstico Técnico'] || '';
-          if (diag) diagnosticos.add(diag);
-        }
-      });
-
-      const todayKey = DateUtils.toDayKey(today);
-      const yesterdayKey = DateUtils.toDayKey(new Date(today.getTime() - 86400000));
-
-      const ingresoN  = seenOTperDay.get(todayKey)?.size || 0;
-      const ingresoN1 = seenOTperDay.get(yesterdayKey)?.size || 0;
-      const maxDia = Math.max(0, ...Array.from(seenOTperDay.values()).map(s => s.size));
-
-      const score = 4 * ingresoN + 2 * ingresoN1 + 1.5 * maxDia;
-      const criticidad = score >= 12 ? 'CRÍTICO' : score >= 7 ? 'ALTO' : 'MEDIO';
-
-      const last7Days = [];
-      const last7DaysCounts = [];
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        const dk = DateUtils.toDayKey(date);
-        last7Days.push(DateUtils.format(date).slice(0, 5));
-        last7DaysCounts.push(seenOTperDay.get(dk)?.size || 0);
-      }
-
-      let nodoInfo = null;
-      if (this.nodosMap.has(z.zona)) {
-        nodoInfo = this.nodosMap.get(z.zona);
-      } else if (z.zonaHFC && this.nodosMap.has(z.zonaHFC)) {
-        nodoInfo = this.nodosMap.get(z.zonaHFC);
-      }
-
-      const alarmasFMS = this.fmsMap.get(z.zona) ||
-                         this.fmsMap.get(z.zonaHFC) ||
-                         this.fmsMap.get(z.zonaFTTH) || [];
-      const alarmasActivas = alarmasFMS.filter(a => a.isActive);
-
-      return {
-        ...z,
-        totalOTs: ordenesEnVentana,
-        ingresoN,
-        ingresoN1,
-        maxDia,
-        score,
-        criticidad,
-        cmts: nodoInfo?.cmts || '',
-        nodoUp: nodoInfo?.up || 0,
-        nodoDown: nodoInfo?.down || 0,
-        nodoEstado: nodoInfo?.estado || 'unknown',
-        last7Days,
-        last7DaysCounts,
-        diagnosticos: Array.from(diagnosticos),
-        alarmas: alarmasFMS,
-        alarmasActivas: alarmasActivas.length,
-        tieneAlarma: alarmasActivas.length > 0,
-        ordenesOriginales: z.ordenes
-      };
-    }).sort((a, b) => b.score - a.score);
-  }
-  
-  analyzeCMTS(zones) {
-    const cmtsGroups = new Map();
-    
-    zones.forEach(z => {
-      if (!z.cmts) return;
-      
-      if (!cmtsGroups.has(z.cmts)) {
-        cmtsGroups.set(z.cmts, {
-          cmts: z.cmts,
-          zonas: [],
-          totalOTs: 0,
-          zonasUp: 0,
-          zonasDown: 0,
-          zonasCriticas: 0
-        });
-      }
-      
-      const group = cmtsGroups.get(z.cmts);
-      group.zonas.push(z);
-      group.totalOTs += z.totalOTs;
-      
-      if (z.nodoEstado === 'up') group.zonasUp++;
-      else if (z.nodoEstado === 'down' || z.nodoEstado === 'critical') group.zonasDown++;
-      
-      if (z.nodoEstado === 'critical') group.zonasCriticas++;
-    });
-    
-    return Array.from(cmtsGroups.values()).sort((a, b) => b.totalOTs - a.totalOTs);
-  }
-  
-  analyzeTerritorios(zones) {
-    const territoriosMap = new Map();
-    
-    zones.forEach(z => {
-      const territorioOriginal = z.territorio;
-      if (!territorioOriginal) return;
-      
-      const territorioNormalizado = TerritorioUtils.normalizar(territorioOriginal);
-      const numeroFlex = TerritorioUtils.extraerFlex(territorioOriginal);
-      
-      if (!territoriosMap.has(territorioNormalizado)) {
-        territoriosMap.set(territorioNormalizado, {
-          territorio: territorioNormalizado,
-          territorioOriginal: territorioOriginal,
-          zonas: [],
-          flexSubdivisiones: new Map(),
-          totalOTs: 0,
-          zonasConAlarma: 0,
-          zonasCriticas: 0,
-          zonasUp: 0,
-          zonasDown: 0,
-          esCritico: false
-        });
-      }
-      
-      const grupo = territoriosMap.get(territorioNormalizado);
-      grupo.zonas.push(z);
-      grupo.totalOTs += z.totalOTs;
-      
-      if (z.tieneAlarma) grupo.zonasConAlarma++;
-      if (z.criticidad === 'CRÍTICO') grupo.zonasCriticas++;
-      if (z.nodoEstado === 'up') grupo.zonasUp++;
-      if (z.nodoEstado === 'down' || z.nodoEstado === 'critical') grupo.zonasDown++;
-      
-      if (numeroFlex !== null) {
-        const flexKey = `Flex ${numeroFlex}`;
-        if (!grupo.flexSubdivisiones.has(flexKey)) {
-          grupo.flexSubdivisiones.set(flexKey, {
-            nombre: flexKey,
-            zonas: [],
-            totalOTs: 0,
-            zonasCriticas: 0
-          });
-        }
-        
-        const flexGrupo = grupo.flexSubdivisiones.get(flexKey);
-        flexGrupo.zonas.push(z);
-        flexGrupo.totalOTs += z.totalOTs;
-        if (z.criticidad === 'CRÍTICO') flexGrupo.zonasCriticas++;
-      }
-      
-      if (z.criticidad === 'CRÍTICO') {
-        grupo.esCritico = true;
-      }
-    });
-    
-    return Array.from(territoriosMap.values())
-      .sort((a, b) => b.totalOTs - a.totalOTs);
-  }
+const dataProcessor = window.dataProcessor;
+if (!dataProcessor) {
+  console.error('DataProcessor no está disponible. Verifica el orden de los scripts.');
 }
 
-const dataProcessor = new DataProcessor();
 
 function escapeHtml(str = '') {
   return String(str)
@@ -2234,49 +1818,45 @@ const EdificiosMejorado = {
 
 const FMSPanel = {
   /**
-   * Renderiza la pestaña de FMS con filtrado por tipo y daño
+   * Renderiza la pestaña de FMS con búsqueda y top 10 de alarmas
    * @param {Array} _ordenes - Órdenes técnicas (no utilizado, se mantiene por compatibilidad)
    * @param {Map} fmsMap - Mapa de alarmas FMS
    * @returns {string} - HTML
    */
   render(_ordenes, fmsMap) {
     if (!fmsMap || fmsMap.size === 0) {
-      return '<div class="loading-message"><p>⚠️ No hay datos de FMS/Alarmas cargados</p></div>';
+      return renderFMSMessage('No hay datos de FMS/Alarmas cargados', '⚠️');
     }
 
     const fmsGroups = this.groupByFMS(fmsMap);
-    const damageStats = this.getDamageStats(fmsGroups);
+    const topGroups = fmsGroups.slice(0, 10);
 
     let html = `
       <div class="fms-panel">
-        <div class="fms-header" style="background: linear-gradient(135deg, #f39c12 0%, #e74c3c 100%);
-             padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-          <h2 style="margin: 0 0 10px 0; font-size: 24px;">🚨 Panel FMS - Alarmas y Daños</h2>
-          <div style="font-size: 14px; opacity: 0.9;">
-            Elementos monitoreados: ${fmsGroups.length} • Zonas con alarmas: ${fmsMap.size}
+        <div class="card text-white bg-warning shadow-sm mb-3">
+          <div class="card-body">
+            <h2 class="card-title h4 mb-2">🚨 Panel FMS - Alarmas y Daños</h2>
+            <p class="card-text mb-0 small">
+              Elementos monitoreados: ${fmsGroups.length} • Zonas con alarmas: ${fmsMap.size}
+            </p>
           </div>
         </div>
 
-        <div class="fms-filters" style="background: white; padding: 20px; border-radius: 12px;
-             margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px;">
-            <div>
-              <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                🔍 Filtrar por Tipo de Elemento FMS
-              </label>
-              <select id="fmsTipoElemento" onchange="filtrarFMS()"
-                      style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
-                <option value="">Todos los tipos</option>
-              </select>
-            </div>
-            <div>
-              <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #333;">
-                ⚠️ Filtrar por Daño / Alarma
-              </label>
-              <select id="fmsDamage" onchange="filtrarFMS()"
-                      style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
-                <option value="">Todos los daños</option>
-              </select>
+        <div class="card shadow-sm mb-3">
+          <div class="card-body">
+            <div class="form-row align-items-center">
+              <div class="form-group col-12 col-md-8 mb-3 mb-md-0">
+                <label class="font-weight-bold text-dark mb-1">
+                  🔎 Buscar por código FMS o nodo/zona
+                </label>
+                <input type="search" id="fmsSearch" class="form-control" oninput="buscarFMS()"
+                       placeholder="Ej: 1000A, NODO 12, Zona Norte" aria-label="Buscar alarmas FMS" />
+              </div>
+              <div class="form-group col-12 col-md-4 mb-0">
+                <div class="alert alert-info py-2 mb-0 small">
+                  Mostrando el <strong>Top 10</strong> por alarmas activas. Usa la búsqueda para un elemento puntual.
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2284,7 +1864,7 @@ const FMSPanel = {
         <div id="fmsListContainer">
     `;
 
-    html += this.renderFMSList(fmsGroups);
+    html += this.renderFMSList(topGroups, { limitNotice: true });
 
     html += `
         </div>
@@ -2292,13 +1872,18 @@ const FMSPanel = {
     `;
 
     window.fmsGroupsData = fmsGroups;
-    window.fmsDamageStats = damageStats;
-
-    setTimeout(() => {
-      this.populateFilters(fmsGroups, damageStats);
-    }, 100);
 
     return html;
+  },
+
+  getDamageStats(fmsGroups) {
+    const damageCount = new Map();
+    fmsGroups.forEach(g => {
+      g.damageSummary.forEach((count, damage) => {
+        damageCount.set(damage, (damageCount.get(damage) || 0) + count);
+      });
+    });
+    return Array.from(damageCount.entries()).sort((a, b) => b[1] - a[1]);
   },
 
   /**
@@ -2335,78 +1920,84 @@ const FMSPanel = {
       });
     });
 
-    return Array.from(groups.values())
+    const enriched = Array.from(groups.values())
       .filter(g => g.alarmas.length > 0)
-      .sort((a, b) => b.alarmas.length - a.alarmas.length);
-  },
-
-  /**
-   * Obtiene estadísticas globales de daños
-   */
-  getDamageStats(fmsGroups) {
-    const stats = new Map();
-
-    fmsGroups.forEach(group => {
-      group.alarmas.forEach(alarma => {
-        const damageKey = formatAlarmaDamage(alarma);
-        stats.set(damageKey, (stats.get(damageKey) || 0) + 1);
+      .map(g => ({
+        ...g,
+        activeCount: g.alarmas.filter(a => a.isActive).length,
+        totalAlarmas: g.alarmas.length
+      }))
+      .sort((a, b) => {
+        if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+        if (b.totalAlarmas !== a.totalAlarmas) return b.totalAlarmas - a.totalAlarmas;
+        return String(a.elementCode).localeCompare(String(b.elementCode));
       });
-    });
 
-    return Array.from(stats.entries()).sort((a, b) => b[1] - a[1]);
+    enriched.forEach((g, idx) => g.rank = idx + 1);
+    return enriched;
   },
 
   /**
    * Renderiza lista de elementos FMS
    */
-  renderFMSList(fmsGroups) {
+  renderFMSList(fmsGroups, options = {}) {
+    const { limitNotice = false } = options;
+
     if (!fmsGroups.length) {
-      return '<div class="loading-message"><p>Sin resultados para los filtros aplicados</p></div>';
+      return '<div class="alert alert-info mb-0">Sin resultados para los filtros aplicados</div>';
     }
 
-    let html = '<div class="fms-list">';
+    let html = '';
 
-    fmsGroups.forEach(group => {
-      const alarmasActivas = group.alarmas.filter(a => a.isActive).length;
-      const totalAlarmas = group.alarmas.length;
+    if (limitNotice) {
+      html += '<div class="alert alert-light border mb-3">Vista resumida (Top 10). Ajusta los filtros para ver otros elementos.</div>';
+    }
+
+    html += '<div class="fms-list">';
+
+    fmsGroups.forEach((group, idx) => {
+      const targetId = (group.id || idx).toString().replace(/'/g, "\\'");
+      const zonas = Array.from(group.zonasAfectadas || []);
+      const alarmasActivas = group.activeCount || 0;
+      const totalAlarmas = group.totalAlarmas || 0;
       const tipoLabel = formatFMSTypeLabel(group.elementType);
-      const damageBadges = Array.from(group.damageSummary.entries())
+
+      const damageItems = Array.from(group.damageSummary.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
-        .map(([damage, count]) => `<span class="badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-muted);">${damage} (${count})</span>`)
-        .join('');
-      const zonas = Array.from(group.zonasAfectadas).sort();
-      const zonasBadges = zonas.map(z => `<span class="badge badge-primary">${z}</span>`).join(' ');
-      const damageContent = damageBadges || '<span class="badge badge-secondary">Sin daños reportados</span>';
-      const targetId = group.id.replace(/'/g, "\\'");
+        .map(([damage, count]) => `<span class="badge badge-light text-muted mr-1 mb-1">${damage} (${count})</span>`)
+        .join(' ');
+
+      const zonasBadges = zonas.sort().map(z => `<span class="badge badge-primary mr-1 mb-1">${z}</span>`).join(' ');
+      const damageContent = damageItems || '<span class="badge badge-secondary">Sin daños reportados</span>';
+      const borderColorClass = alarmasActivas > 0 ? 'border-warning' : 'border-secondary';
 
       html += `
-        <div class="fms-item" style="background: white; padding: 20px; border-radius: 12px;
-             margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-             border-left: 4px solid ${alarmasActivas > 0 ? '#e74c3c' : '#95a5a6'};">
-          <div style="display: flex; justify-content: space-between; align-items: start; gap: 16px;">
-            <div>
-              <h3 style="margin: 0 0 8px 0; color: #333; font-size: 18px;">
-                ${tipoLabel}: ${group.elementCode}
-              </h3>
-              <div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: #666;">
-                <div><strong>Zonas relacionadas:</strong> ${zonas.length}</div>
-                <div><strong>Alarmas activas:</strong> ${alarmasActivas}</div>
-                <div><strong>Total alarmas:</strong> ${totalAlarmas}</div>
+        <div class="card mb-3 shadow-sm border-left ${borderColorClass} fms-item-card">
+          <div class="card-body">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start">
+              <div class="mb-3 mb-md-0">
+                <h3 class="h5 mb-2 text-dark">
+                  ${tipoLabel}: ${group.elementCode}
+                </h3>
+                <div class="d-flex flex-wrap small text-muted">
+                  <div class="mr-3"><strong>Zonas relacionadas:</strong> ${zonas.length}</div>
+                  <div class="mr-3"><strong>Alarmas activas:</strong> ${alarmasActivas}</div>
+                  <div><strong>Total alarmas:</strong> ${totalAlarmas}</div>
+                </div>
               </div>
+              <button class="btn btn-primary btn-sm" onclick="verDetalleFMS('${targetId}')">
+                👁️ Ver detalle
+              </button>
             </div>
-            <button class="btn btn-primary" onclick="verDetalleFMS('${targetId}')"
-                    style="padding: 8px 16px; font-size: 14px; white-space: nowrap;">
-              👁️ Ver detalle
-            </button>
-          </div>
-          <div style="margin-top: 15px;">
-            <div style="font-size: 12px; color: #666; margin-bottom: 6px;"><strong>Daños detectados</strong></div>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">${damageContent}</div>
-          </div>
-          <div style="margin-top: 15px;">
-            <div style="font-size: 12px; color: #666; margin-bottom: 6px;"><strong>Zonas asociadas</strong></div>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap;">${zonasBadges}</div>
+            <div class="mt-3">
+              <div class="small text-muted font-weight-bold mb-1">Daños detectados</div>
+              <div class="d-flex flex-wrap">${damageContent}</div>
+            </div>
+            <div class="mt-3">
+              <div class="small text-muted font-weight-bold mb-1">Zonas asociadas</div>
+              <div class="d-flex flex-wrap">${zonasBadges}</div>
+            </div>
           </div>
         </div>
       `;
@@ -2414,62 +2005,58 @@ const FMSPanel = {
 
     html += '</div>';
     return html;
-  },
-
-  /**
-   * Pobla los filtros con datos
-   */
-  populateFilters(fmsGroups, damageStats) {
-    const tipoSelect = document.getElementById('fmsTipoElemento');
-    if (tipoSelect) {
-      const tipos = new Set();
-      fmsGroups.forEach(g => g.elementType && tipos.add(g.elementType));
-
-      Array.from(tipos).sort().forEach(tipo => {
-        const option = document.createElement('option');
-        option.value = tipo;
-        option.textContent = formatFMSTypeLabel(tipo);
-        tipoSelect.appendChild(option);
-      });
-    }
-
-    const damageSelect = document.getElementById('fmsDamage');
-    if (damageSelect) {
-      damageStats.forEach(([damage, count]) => {
-        const option = document.createElement('option');
-        option.value = damage;
-        option.textContent = `${damage} (${count})`;
-        damageSelect.appendChild(option);
-      });
-    }
   }
 };
 
-/**
- * Filtra elementos FMS según los filtros seleccionados
- */
 function filtrarFMS() {
-  const tipoElemento = document.getElementById('fmsTipoElemento')?.value || '';
-  const damageFilter = document.getElementById('fmsDamage')?.value || '';
+  const tipoElementoSelect = document.getElementById('fmsTipoElemento');
+  const damageSelect = document.getElementById('fmsDamage');
+  const container = document.getElementById('fmsListContainer');
 
-  if (!window.fmsGroupsData) return;
+  if (!window.fmsGroupsData || !container) return;
 
-  let filtrados = window.fmsGroupsData;
+  const tipoElemento = tipoElementoSelect?.value || '';
+  const damageFilter = damageSelect?.value || '';
+
+  let resultados = window.fmsGroupsData;
 
   if (tipoElemento) {
-    filtrados = filtrados.filter(g => g.elementType === tipoElemento);
+    resultados = resultados.filter(g => g.elementType === tipoElemento);
   }
 
   if (damageFilter) {
-    filtrados = filtrados.filter(g => g.alarmas.some(a => formatAlarmaDamage(a) === damageFilter));
+    resultados = resultados.filter(g =>
+      g.alarmas.some(a => formatAlarmaDamage(a) === damageFilter)
+    );
   }
 
+  container.innerHTML = FMSPanel.renderFMSList(resultados, { limitNotice: false });
+}
+
+/**
+ * Buscar elementos FMS por código o zona/nodo
+ */
+function buscarFMS() {
+  const searchInput = document.getElementById('fmsSearch');
   const container = document.getElementById('fmsListContainer');
-  if (container) {
-    container.innerHTML = FMSPanel.renderFMSList(filtrados);
+
+  if (!window.fmsGroupsData || !container || !searchInput) return;
+
+  const query = TextUtils.normalize(searchInput.value || '');
+  let resultados = window.fmsGroupsData;
+
+  if (query) {
+    resultados = resultados.filter(g => {
+      const code = TextUtils.normalize(g.elementCode || '');
+      const type = TextUtils.normalize(formatFMSTypeLabel(g.elementType || ''));
+      const zonas = TextUtils.normalize(Array.from(g.zonasAfectadas || []).join(' '));
+      return code.includes(query) || type.includes(query) || zonas.includes(query);
+    });
+  } else {
+    resultados = resultados.slice(0, 10);
   }
 
-  toast(`🔍 Filtrado: ${filtrados.length} elemento${filtrados.length === 1 ? '' : 's'} encontrados`);
+  container.innerHTML = FMSPanel.renderFMSList(resultados, { limitNotice: !query });
 }
 
 /**
@@ -2828,6 +2415,27 @@ function buildUbicacion(order){
   return parts.join(', ');
 }
 
+function ensureOrderDeviceMeta(order) {
+  if (!order) return;
+  if (!order.__meta) order.__meta = {};
+  const meta = order.__meta;
+
+  let dispositivos = Array.isArray(meta.dispositivos) ? meta.dispositivos : [];
+
+  if (!dispositivos.length) {
+    const colInfo = findDispositivosColumn(order);
+    if (colInfo && order[colInfo]) {
+      dispositivos = TextUtils.parseDispositivosJSON(order[colInfo]);
+    }
+  } else {
+    dispositivos = dispositivos
+      .map(d => normalizeDeviceRecord(d || {}))
+      .filter(Boolean);
+  }
+
+  meta.dispositivos = dispositivos;
+}
+
 function buildOrderExportRow(order, zoneInfo){
   if (!order) return null;
   const meta = order.__meta || {};
@@ -2861,26 +2469,15 @@ function buildOrderExportRow(order, zoneInfo){
   let mac = pickFirstValue(order, ORDER_FIELD_KEYS.mac);
   let modelo = '';
   let tipoEquipo = '';
-  
-  // Intentar extraer dispositivos si no están en meta
-  if (!Array.isArray(meta.dispositivos) || !meta.dispositivos.length) {
-    const colInfo = findDispositivosColumn(order);
-    if (colInfo && order[colInfo]) {
-      const dispositivos = TextUtils.parseDispositivosJSON(order[colInfo]);
-      if (dispositivos && dispositivos.length) {
-        meta.dispositivos = dispositivos;
-      }
-    }
+
+  if (!mac && Array.isArray(meta.dispositivos) && meta.dispositivos.length) {
+    mac = meta.dispositivos[0].macAddress || meta.dispositivos[0].mac || '';
   }
-  
-  // Extraer MAC, Modelo y Tipo de equipo del primer dispositivo
+
   if (Array.isArray(meta.dispositivos) && meta.dispositivos.length){
     const device = meta.dispositivos[0];
-    if (!mac) {
-      mac = String(device.macAddress || device.mac || '').trim();
-    }
-    modelo = String(device.model || device.modelo || '').trim();
-    tipoEquipo = String(device.type || device.tipo || '').trim();
+    modelo = String(device.model || '').trim();
+    tipoEquipo = String(device.type || '').trim();
   }
 
   return {
@@ -3009,82 +2606,118 @@ let allZones = [];
 let allCMTS = [];
 let currentZone = null;
 let selectedOrders = new Set();
+window.equiposOpen = new Set();
+
+const fmsRenderState = {
+  needsRender: true,
+  isRendering: false,
+  lastOrders: [],
+  lastFmsMap: new Map()
+};
 
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
 });
 
+function bindFileInput(inputId, tipo) {
+  on(inputId, 'change', e => loadFile(e, tipo));
+}
+
 function setupEventListeners() {
-  document.getElementById('fileConsolidado1').addEventListener('change', e => loadFile(e, 1));
-  document.getElementById('fileConsolidado2').addEventListener('change', e => loadFile(e, 2));
-  document.getElementById('fileNodos').addEventListener('change', e => loadFile(e, 3));
-  document.getElementById('fileFMS').addEventListener('change', e => loadFile(e, 4));
+  bindFileInput('fileConsolidado1', 1);
+  bindFileInput('fileConsolidado2', 2);
+  bindFileInput('fileNodos', 3);
+  bindFileInput('fileFMS', 4);
   
   const filterCatec = document.getElementById('filterCATEC');
   const filterExcludeCatec = document.getElementById('filterExcludeCATEC');
 
   if (filterCatec && filterExcludeCatec) {
-    filterCatec.addEventListener('change', e => {
-      if (e.target.checked) {
+    on('filterCATEC', 'change', e => {
+      if (e.target.checked && filterExcludeCatec) {
         filterExcludeCatec.checked = false;
       }
       applyFilters();
     });
 
-    filterExcludeCatec.addEventListener('change', e => {
-      if (e.target.checked) {
+    on('filterExcludeCATEC', 'change', e => {
+      if (e.target.checked && filterCatec) {
         filterCatec.checked = false;
       }
       applyFilters();
     });
   }
-  document.getElementById('showAllStates').addEventListener('change', applyFilters);
-  document.getElementById('filterFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterExcludeFTTH').checked = false;
+  on('showAllStates', 'change', applyFilters);
+  on('filterFTTH', 'change', e => {
+    const exclude = document.getElementById('filterExcludeFTTH');
+    if (e.target.checked && exclude) exclude.checked = false;
     applyFilters();
   });
-  document.getElementById('filterExcludeFTTH').addEventListener('change', e => {
-    if (e.target.checked) document.getElementById('filterFTTH').checked = false;
+  on('filterExcludeFTTH', 'change', e => {
+    const ftth = document.getElementById('filterFTTH');
+    if (e.target.checked && ftth) ftth.checked = false;
     applyFilters();
   });
-  document.getElementById('filterNodoEstado').addEventListener('change', applyFilters);
-  document.getElementById('filterCMTS').addEventListener('change', applyFilters);
-  document.getElementById('daysWindow').addEventListener('change', applyFilters);
-  document.getElementById('filterTerritorio').addEventListener('change', applyFilters);
-  document.getElementById('filterSistema').addEventListener('change', applyFilters);
-  document.getElementById('filterAlarma').addEventListener('change', applyFilters);
-  document.getElementById('quickSearch').addEventListener('input', debounce(applyFilters, 300));
-  document.getElementById('ordenarPorIngreso').addEventListener('change', applyFilters);
+  on('filterNodoEstado', 'change', applyFilters);
+  on('filterCMTS', 'change', applyFilters);
+  on('daysWindow', 'change', applyFilters);
+  on('filterTerritorio', 'change', applyFilters);
+  on('filterSistema', 'change', applyFilters);
+  on('filterAlarma', 'change', applyFilters);
+  on('quickSearch', 'input', debounce(applyFilters, 300));
+  on('ordenarPorIngreso', 'change', applyFilters);
 
-  const zoneFilterSearch = document.getElementById('zoneFilterSearch');
-  if (zoneFilterSearch) {
-    zoneFilterSearch.addEventListener('input', onZoneFilterSearch);
-  }
-
-  const zoneFilterOptions = document.getElementById('zoneFilterOptions');
-  if (zoneFilterOptions) {
-    zoneFilterOptions.addEventListener('change', onZoneOptionChange);
-  }
+  on('zoneFilterSearch', 'input', onZoneFilterSearch);
+  on('zoneFilterOptions', 'change', onZoneOptionChange);
 
   document.addEventListener('click', handleZoneFilterOutsideClick);
 }
 
 async function loadFile(e, tipo) {
-  const file = e.target.files[0];
-  if (!file) return;
-  
   const statusEl = document.getElementById(`status${tipo}`);
+  if (!ensureDataProcessorAvailable()) {
+    if (statusEl) statusEl.textContent = '✗ Error cargando librerías';
+    return;
+  }
+
+  if (!statusEl) {
+    console.warn(`⚠️ No se encontró el elemento de estado para tipo ${tipo}`);
+    return;
+  }
+
   statusEl.textContent = 'Cargando...';
   statusEl.classList.remove('loaded');
-  
-  let result;
-  
-  if (tipo === 4 && file.name.endsWith('.csv')) {
-    result = await dataProcessor.loadCSV(file);
-  } else {
-    result = await dataProcessor.loadExcel(file, tipo);
+
+  let result = { success:false, rows:0, error:'Sin procesar' };
+  try {
+    if (!XLSX) throw new Error('Librería XLSX no cargada');
+    const file = e.target.files && e.target.files[0];
+    if (!file) throw new Error('Sin archivo');
+
+    console.info(`📂 Cargando tipo ${tipo}: ${file.name} (${file.size || 0} bytes)`);
+
+    // Manejo “inteligente” para FMS
+    if (tipo === 4) {
+      if (/\.csv$/i.test(file.name)) {
+        result = await dataProcessor.loadCSV(file);
+      } else {
+        // sniff por separadores
+        const head = (await file.text()).slice(0, 4096);
+        if (head.includes(';') || head.includes(',')) {
+          result = await dataProcessor.loadCSV(new File([head], file.name, {type:'text/csv'}));
+        } else {
+          result = await dataProcessor.loadExcel(file, tipo);
+        }
+      }
+    } else {
+      result = await dataProcessor.loadExcel(file, tipo);
+    }
+  } catch (err) {
+    console.error(err);
+    result = { success:false, rows:0, error: String(err.message||err), notified: true };
+    toast(result.error);
   }
-  
+
   if (result.success) {
     statusEl.textContent = `✓ ${result.rows} filas cargadas`;
     statusEl.classList.add('loaded');
@@ -3098,12 +2731,15 @@ async function loadFile(e, tipo) {
     }
   } else {
     statusEl.textContent = `✗ Error`;
-    toast(`Error al cargar archivo: ${result.error}`);
+    if (!result.notified) {
+      toast(`Error al cargar archivo: ${result.error}`);
+    }
   }
 }
 
 function processData() {
   const merged = dataProcessor.merge();
+  merged.forEach(ensureOrderDeviceMeta);
   if (!merged.length) return;
   
   const daysWindow = parseInt(document.getElementById('daysWindow').value);
@@ -3236,6 +2872,54 @@ function runFiltersPipeline() {
   return { filtered, analyzed, cmtsFiltered, territoriosAnalisis };
 }
 
+function renderFMSMessage(message, icon = 'ℹ️') {
+  return `<div class="loading-message"><p>${icon} ${message}</p></div>`;
+}
+
+function updateFMSPendingData(orders, fmsMap) {
+  fmsRenderState.lastOrders = Array.isArray(orders) ? orders : [];
+  fmsRenderState.lastFmsMap = fmsMap instanceof Map ? fmsMap : new Map();
+  fmsRenderState.needsRender = true;
+
+  const fmsPanelEl = document.getElementById('fmsPanel');
+  if (fmsPanelEl && !fmsPanelEl.classList.contains('active')) {
+    fmsPanelEl.innerHTML = renderFMSMessage('El panel FMS se generará al abrir la pestaña.');
+  } else {
+    renderFMSPanelIfNeeded();
+  }
+}
+
+function renderFMSPanelIfNeeded(options = {}) {
+  const fmsPanelEl = document.getElementById('fmsPanel');
+  if (!fmsPanelEl || fmsRenderState.isRendering) return;
+
+  const isActive = fmsPanelEl.classList.contains('active');
+  const shouldRender = options.force || (isActive && fmsRenderState.needsRender);
+
+  if (!shouldRender) return;
+
+  const fmsMap = fmsRenderState.lastFmsMap || new Map();
+  if (!fmsMap.size) {
+    fmsPanelEl.innerHTML = renderFMSMessage('No hay datos de FMS/Alarmas cargados', '⚠️');
+    fmsRenderState.needsRender = false;
+    return;
+  }
+
+  fmsRenderState.isRendering = true;
+  fmsPanelEl.innerHTML = renderFMSMessage('Procesando panel FMS...', '⏳');
+  requestAnimationFrame(() => {
+    try {
+      fmsPanelEl.innerHTML = FMSPanel.render(fmsRenderState.lastOrders || [], fmsMap);
+    } catch (err) {
+      console.error('Error rendering FMS panel', err);
+      fmsPanelEl.innerHTML = renderFMSMessage('No se pudo renderizar el panel FMS.', '❌');
+    } finally {
+      fmsRenderState.needsRender = false;
+      fmsRenderState.isRendering = false;
+    }
+  });
+}
+
 function applyFilters() {
   if (!currentData) return;
 
@@ -3292,11 +2976,8 @@ function applyFilters() {
   document.getElementById('cmtsPanel').innerHTML = UIRenderer.renderCMTS(cmtsFiltered);
   document.getElementById('edificiosPanel').innerHTML = UIRenderer.renderEdificios(filtered);
   document.getElementById('equiposPanel').innerHTML = UIRenderer.renderEquipos(filtered);
-  const fmsPanelEl = document.getElementById('fmsPanel');
-  if (fmsPanelEl) {
-    const fmsMap = dataProcessor ? dataProcessor.fmsMap : new Map();
-    fmsPanelEl.innerHTML = FMSPanel.render(filtered, fmsMap);
-  }
+  const fmsMap = dataProcessor ? dataProcessor.fmsMap : new Map();
+  updateFMSPendingData(filtered, fmsMap);
 }
 
 function resetFiltersState() {
@@ -3475,9 +3156,13 @@ function filtrarPorTerritorio(territorioNormalizado) {
 function switchTab(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
-  
+
   document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
   document.getElementById(`${tabName}Panel`).classList.add('active');
+
+  if (tabName === 'fms') {
+    renderFMSPanelIfNeeded({ force: true });
+  }
 }
 
 function showAlarmaInfo(zoneIdx) {
