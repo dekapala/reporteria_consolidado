@@ -2241,6 +2241,9 @@ const FMSPanel = {
    */
   render(_ordenes, fmsMap) {
     if (!fmsMap || fmsMap.size === 0) {
+      window.fmsGroupsData = [];
+      window.fmsGroupsIndex = Object.create(null);
+      window.fmsDamageStats = new Map();
       return '<div class="loading-message"><p>⚠️ No hay datos de FMS/Alarmas cargados</p></div>';
     }
 
@@ -2648,7 +2651,7 @@ const ZONE_EXPORT_HEADERS = [
   'Caso',
   'NumeroOrden',
   'NumeroOTuca',
-  'Diagnostico',
+  'Diagnostico Tecnico',
   'Tipo',
   'TipoTrabajo',
   'Estado1',
@@ -2892,7 +2895,7 @@ function buildOrderExportRow(order, zoneInfo){
     Caso: caso || '',
     NumeroOrden: numeroOrden || '',
     NumeroOTuca: numeroOTuca || '',
-    Diagnostico: diagnostico || '',
+    'Diagnostico Tecnico': diagnostico || '',
     Tipo: tipo || '',
     TipoTrabajo: tipoTrabajo || '',
     Estado1: estado1 || '',
