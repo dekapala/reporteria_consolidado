@@ -724,7 +724,7 @@ class DataProcessor {
   async loadExcel(file, tipo) {
     try {
       const data = new Uint8Array(await file.arrayBuffer());
-      
+
       const wb = XLSX.read(data, {
         type: 'array',
         cellDates: false,
@@ -732,8 +732,33 @@ class DataProcessor {
         cellFormula: false,
         raw: false
       });
-      
-      const ws = wb.Sheets[wb.SheetNames[0]];
+
+      const expectedHeaders = ['zona tecnica', 'numero de cita', 'numero del caso'];
+      const selectedSheetName = wb.SheetNames.find(name => {
+        const wsCandidate = wb.Sheets[name];
+        if (!wsCandidate || !wsCandidate['!ref']) return false;
+
+        const candidateRange = XLSX.utils.decode_range(wsCandidate['!ref']);
+        const maxRow = Math.min(candidateRange.e.r, candidateRange.s.r + 50);
+        const maxCol = Math.min(candidateRange.e.c, candidateRange.s.c + 20);
+
+        for (let R = candidateRange.s.r; R <= maxRow; R++) {
+          for (let C = candidateRange.s.c; C <= maxCol; C++) {
+            const cellAddr = XLSX.utils.encode_cell({r: R, c: C});
+            const cell = wsCandidate[cellAddr];
+            if (!cell || !cell.v) continue;
+
+            const normalized = TextUtils.normalize(cell.v);
+            if (expectedHeaders.some(h => normalized.includes(TextUtils.normalize(h)))) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }) || wb.SheetNames[0];
+
+      const ws = wb.Sheets[selectedSheetName];
+      console.log(`📄 Hoja seleccionada: ${selectedSheetName}`);
       const range = XLSX.utils.decode_range(ws['!ref']);
       
       let headerRow = 0;
